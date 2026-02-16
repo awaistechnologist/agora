@@ -1,0 +1,49 @@
+# ===== SECRETS — NEVER COMMIT =====
+.env
+*.key
+*.pem
+
+# ===== Runtime data =====
+data/agora.db
+data/agora.db-journal
+data/agora.db-wal
+
+# ===== Generated neuro-san files =====
+registries/manifest.hocon
+registries/user/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+env/
+
+# ===== Logs =====
+logs/
+*.log
+
+# ===== Node / Frontend =====
+frontend/node_modules/
+frontend/dist/
+
+# ===== Agent / AI =====
+.gemini/
+.agent/
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== OS =====
+*.tmp
+*.bak
