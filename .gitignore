@@ -12,6 +12,7 @@ data/agora.db-shm
 # ===== Generated neuro-san files =====
 registries/manifest.hocon
 registries/user/
+spec/
 
 # ===== Python =====
 __pycache__/
