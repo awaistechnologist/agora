@@ -2,6 +2,8 @@
 
 > Many voices. Better decisions.
 
+**Note:** This project is currently compatible with **macOS** and **Linux** environments. Windows support is not yet implemented.
+
 Agora is a **neuro-symbolic council system** that leverages multiple LLM personas to deliberate on complex topics. It uses a structured debate format where specialized agents (Councillors) discuss a statement, critique each other, and reach a synthesized verdict.
 
 ## What is "Neuro-Symbolic"?
