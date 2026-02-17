@@ -30,7 +30,7 @@ def fetch_models_from_openrouter(api_key: str) -> list[dict]:
     try:
         resp = httpx.get(
             OPENROUTER_MODELS_URL,
-            params={"supported_parameters": "tools"},
+            # params={"supported_parameters": "tools"}, # specific filtering removed
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "http://localhost:8080",
@@ -140,7 +140,7 @@ def test_api_key(api_key: str) -> tuple[bool, int]:
     try:
         resp = httpx.get(
             OPENROUTER_MODELS_URL,
-            params={"supported_parameters": "tools"},
+            # params={"supported_parameters": "tools"}, # specific filtering removed
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "http://localhost:8080",
