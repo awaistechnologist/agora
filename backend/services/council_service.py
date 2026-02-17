@@ -747,7 +747,9 @@ def list_councils(db: Session) -> list[dict]:
             "is_default": c.is_default,
             "is_active": c.is_active,
             "councillor_count": len(c.councillors),
+
             "web_search_enabled": c.web_search_enabled or False,
+            "web_search_provider": c.web_search_provider or "openrouter",
             "model_info": model_info,
         })
     return result
@@ -770,7 +772,9 @@ def get_council(db: Session, council_id: str) -> dict | None:
         "source_council_id": council.source_council_id,
         "hocon_file_path": council.hocon_file_path,
         "coordinator_instructions": council.coordinator_instructions,
+
         "web_search_enabled": council.web_search_enabled or False,
+        "web_search_provider": council.web_search_provider or "openrouter",
         "created_at": council.created_at,
         "updated_at": council.updated_at,
         "councillors": [
@@ -803,6 +807,7 @@ def create_council(db: Session, data: dict) -> dict:
         is_active=True,
         coordinator_instructions=data.get("coordinator_instructions"),
         web_search_enabled=data.get("web_search_enabled", False),
+        web_search_provider=data.get("web_search_provider", "openrouter"),
     )
     db.add(council)
     db.flush()
@@ -837,39 +842,56 @@ def update_council(db: Session, council_id: str, data: dict) -> dict | None:
     council.coordinator_instructions = data.get("coordinator_instructions", council.coordinator_instructions)
     if "web_search_enabled" in data:
         council.web_search_enabled = data["web_search_enabled"]
+    if "web_search_provider" in data:
+        council.web_search_provider = data["web_search_provider"]
 
     # Replace councillors
+    # Replace/Update councillors
     if "councillors" in data:
-        # Check for existing responses linked to these councillors
-        # If any exist, we cannot simply delete the councillors due to FK constraints.
-        # We must either cascade delete (data loss) or block the update.
-        # Blocking is safer.
-        current_councillor_ids = [c.id for c in council.councillors]
-        if current_councillor_ids:
-            from backend.database import ResponseRow
-            existing_responses = db.query(ResponseRow).filter(
-                ResponseRow.councillor_id.in_(current_councillor_ids)
-            ).count()
-            if existing_responses > 0:
-                raise ValueError(
-                    "Cannot modify council structure because it has existing session history. "
-                    "Please duplicate this council to make changes."
-                )
+        incoming_councillors = data["councillors"]
+        existing_councillors_map = {c.id: c for c in council.councillors}
+        processed_ids = set()
 
-        db.query(CouncillorRow).filter(CouncillorRow.council_id == council_id).delete()
-        for i, c in enumerate(data["councillors"]):
-            councillor = CouncillorRow(
-                id=str(uuid.uuid4()),
-                council_id=council_id,
-                name=c["name"],
-                role_description=c["role_description"],
-                expertise_area=c.get("expertise_area", ""),
-                perspective=c.get("perspective", "neutral"),
-                instructions=c.get("instructions"),
-                model_override=c.get("model_override"),
-                sort_order=i,
-            )
-            db.add(councillor)
+        for i, c_data in enumerate(incoming_councillors):
+            c_id = c_data.get("id")
+
+            if c_id and c_id in existing_councillors_map:
+                # Update existing
+                councillor = existing_councillors_map[c_id]
+                councillor.name = c_data["name"]
+                councillor.role_description = c_data["role_description"]
+                councillor.expertise_area = c_data.get("expertise_area")
+                councillor.perspective = c_data.get("perspective", "neutral")
+                councillor.instructions = c_data.get("instructions")
+                councillor.model_override = c_data.get("model_override")
+                councillor.sort_order = i
+                processed_ids.add(c_id)
+            else:
+                # Create new
+                new_councillor = CouncillorRow(
+                    id=str(uuid.uuid4()),
+                    council_id=council_id,
+                    name=c_data["name"],
+                    role_description=c_data["role_description"],
+                    expertise_area=c_data.get("expertise_area"),
+                    perspective=c_data.get("perspective", "neutral"),
+                    instructions=c_data.get("instructions"),
+                    model_override=c_data.get("model_override"),
+                    sort_order=i,
+                )
+                db.add(new_councillor)
+
+        # Handle deletions with safety check
+        from backend.database import ResponseRow
+        for c_id, councillor in existing_councillors_map.items():
+            if c_id not in processed_ids:
+                has_history = db.query(ResponseRow).filter(ResponseRow.councillor_id == c_id).count() > 0
+                if has_history:
+                    raise ValueError(
+                        f"Cannot remove councillor '{councillor.name}' because they have existing session history. "
+                        "Please duplicate this council to make structural changes."
+                    )
+                db.delete(councillor)
 
     db.commit()
     return get_council(db, council_id)
@@ -887,6 +909,7 @@ def duplicate_council(db: Session, council_id: str) -> dict | None:
         "icon": original["icon"],
         "coordinator_instructions": original.get("coordinator_instructions"),
         "web_search_enabled": original.get("web_search_enabled", False),
+        "web_search_provider": original.get("web_search_provider", "openrouter"),
         "councillors": [
             {
                 "name": c["name"],
@@ -940,6 +963,7 @@ def reset_council(db: Session, council_id: str) -> dict | None:
     council.icon = council_def["icon"]
     council.coordinator_instructions = council_def.get("coordinator_instructions")
     council.web_search_enabled = council_def.get("web_search_enabled", False)
+    council.web_search_provider = council_def.get("web_search_provider", "openrouter")
 
     # Delete existing councillors and re-seed
     # Check for history first

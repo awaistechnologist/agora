@@ -22,6 +22,7 @@ export default function CouncilEditor() {
     const [icon, setIcon] = useState('users')
     const [coordinatorInstructions, setCoordinatorInstructions] = useState('')
     const [webSearchEnabled, setWebSearchEnabled] = useState(false)
+    const [webSearchProvider, setWebSearchProvider] = useState('openrouter')
     const [councillors, setCouncillors] = useState([
         { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: true },
         { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: false },
@@ -47,6 +48,7 @@ export default function CouncilEditor() {
                     setIcon(data.icon)
                     setCoordinatorInstructions(data.coordinator_instructions || '')
                     setWebSearchEnabled(data.web_search_enabled || false)
+                    setWebSearchProvider(data.web_search_provider || 'openrouter')
                     setIsDefault(data.is_default || false)
                     setCouncillors(data.councillors.map(c => ({ ...c, expanded: false })))
                 })
@@ -95,7 +97,9 @@ export default function CouncilEditor() {
             icon,
             coordinator_instructions: coordinatorInstructions.trim() || null,
             web_search_enabled: webSearchEnabled,
+            web_search_provider: webSearchProvider,
             councillors: validCouncillors.map(c => ({
+                id: c.id,
                 name: c.name.trim(),
                 role_description: c.role_description.trim(),
                 expertise_area: c.expertise_area?.trim() || '',
@@ -211,33 +215,68 @@ export default function CouncilEditor() {
                     </div>
 
                     {/* Web Search Toggle */}
-                    <div className="card" style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <Globe size={18} style={{ color: webSearchEnabled ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
-                            <div>
-                                <span style={{ fontSize: '13px', fontWeight: 600 }}>Web Search</span>
-                                <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
-                                    Let councillors access real-time web information when responding.
-                                </p>
+                    <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <Globe size={18} style={{ color: webSearchEnabled ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
+                                <div>
+                                    <span style={{ fontSize: '13px', fontWeight: 600 }}>Web Search</span>
+                                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
+                                        Let councillors access real-time web information when responding.
+                                    </p>
+                                </div>
                             </div>
+                            <button
+                                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                                style={{
+                                    width: '44px', height: '24px', borderRadius: '12px', border: 'none',
+                                    cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+                                    background: webSearchEnabled ? 'var(--color-primary)' : 'var(--color-border)',
+                                    flexShrink: 0,
+                                }}
+                            >
+                                <span style={{
+                                    position: 'absolute', top: '2px',
+                                    left: webSearchEnabled ? '22px' : '2px',
+                                    width: '20px', height: '20px', borderRadius: '50%',
+                                    background: '#fff', transition: 'left 0.2s',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                                }} />
+                            </button>
                         </div>
-                        <button
-                            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                            style={{
-                                width: '44px', height: '24px', borderRadius: '12px', border: 'none',
-                                cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
-                                background: webSearchEnabled ? 'var(--color-primary)' : 'var(--color-border)',
-                                flexShrink: 0,
-                            }}
-                        >
-                            <span style={{
-                                position: 'absolute', top: '2px',
-                                left: webSearchEnabled ? '22px' : '2px',
-                                width: '20px', height: '20px', borderRadius: '50%',
-                                background: '#fff', transition: 'left 0.2s',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                            }} />
-                        </button>
+
+                        {webSearchEnabled && (
+                            <div className="animate-fade-in" style={{
+                                marginTop: '16px', paddingTop: '16px',
+                                borderTop: '1px solid var(--color-border-light)'
+                            }}>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '10px' }}>Search Provider</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                        <input
+                                            type="radio"
+                                            checked={webSearchProvider === 'openrouter'}
+                                            onChange={() => setWebSearchProvider('openrouter')}
+                                            style={{ accentColor: 'var(--color-primary)' }}
+                                        />
+                                        <span>
+                                            <strong style={{ fontWeight: 500 }}>OpenRouter</strong> <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>(Native / Paid)</span>
+                                        </span>
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                        <input
+                                            type="radio"
+                                            checked={webSearchProvider === 'local'}
+                                            onChange={() => setWebSearchProvider('local')}
+                                            style={{ accentColor: 'var(--color-primary)' }}
+                                        />
+                                        <span>
+                                            <strong style={{ fontWeight: 500 }}>DuckDuckGo</strong> <span style={{ color: '#34B87A', fontSize: '12px', fontWeight: 500 }}>(Local Injection / Free)</span>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Coordinator Instructions */}
