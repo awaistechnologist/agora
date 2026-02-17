@@ -114,14 +114,9 @@ export default function Sidebar() {
                     color: 'var(--color-text-muted)',
                 }}>
                     Powered by{' '}
-                    <a
-                        href="https://github.com/cognizant-ai-lab/neuro-san"
-                        target="_blank"
-                        rel="noopener"
-                        style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}
-                    >
-                        Neuro SAN
-                    </a>
+                    <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                        Agora Engine
+                    </span>
                 </p>
             </div>
         </aside>

@@ -329,11 +329,7 @@ export default function Settings() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                     <p><strong style={{ color: 'var(--color-text-primary)' }}>Agora</strong> v0.1.0</p>
                     <p>
-                        Powered by{' '}
-                        <a href="https://github.com/cognizant-ai-lab/neuro-san" target="_blank" rel="noopener"
-                            style={{ color: 'var(--color-primary)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            Neuro SAN <ExternalLink size={12} />
-                        </a>, an open-source multi-agent framework by Cognizant AI Lab.
+                        Powered by <strong style={{ color: 'var(--color-text-primary)' }}>Agora Engine</strong>.
                     </p>
                     <p>
                         LLM access via{' '}

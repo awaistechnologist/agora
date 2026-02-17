@@ -1,8 +1,8 @@
 """
-Agora Engine — Interface (Simulation Mode)
+Agora Engine — Core Interface
 
-In simulation mode, the engine calls OpenRouter directly for each councillor
-and then for the coordinator synthesis, without requiring a running Neuro SAN server.
+The engine calls OpenRouter directly for each councillor and then for the coordinator synthesis,
+without requiring external agent servers.
 This produces real, high-quality AI deliberations with accurate cost tracking.
 """
 
