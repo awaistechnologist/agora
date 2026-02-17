@@ -7,6 +7,7 @@
 data/agora.db
 data/agora.db-journal
 data/agora.db-wal
+data/agora.db-shm
 
 # ===== Generated neuro-san files =====
 registries/manifest.hocon
