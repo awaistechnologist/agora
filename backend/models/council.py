@@ -19,6 +19,10 @@ class CouncillorCreate(CouncillorBase):
     pass
 
 
+class CouncillorUpdate(CouncillorBase):
+    id: Optional[str] = None
+
+
 class CouncillorResponse(CouncillorBase):
     id: str
     council_id: str
@@ -34,6 +38,7 @@ class CouncilBase(BaseModel):
     icon: str = Field(default="users")
     coordinator_instructions: Optional[str] = None
     web_search_enabled: bool = False
+    web_search_provider: str = "openrouter"
 
 
 class CouncilCreate(CouncilBase):
@@ -41,7 +46,7 @@ class CouncilCreate(CouncilBase):
 
 
 class CouncilUpdate(CouncilBase):
-    councillors: list[CouncillorCreate] = Field(..., min_length=2, max_length=10)
+    councillors: list[CouncillorUpdate] = Field(..., min_length=2, max_length=10)
 
 
 class CouncilResponse(CouncilBase):

@@ -63,6 +63,7 @@ class CouncilRow(Base):
     hocon_file_path = Column(Text, nullable=True)
     coordinator_instructions = Column(Text, nullable=True)
     web_search_enabled = Column(Boolean, default=False)
+    web_search_provider = Column(Text, default="openrouter")
     created_at = Column(Text, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
     updated_at = Column(Text, server_default="CURRENT_TIMESTAMP")
     councillors = relationship("CouncillorRow", back_populates="council", cascade="all, delete-orphan")

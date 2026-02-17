@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import time
+from datetime import datetime
 import httpx
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Optional
@@ -119,6 +120,7 @@ class AgoraEngine:
         default_model: str = "openai/gpt-4o",
         coordinator_instructions: str = "",
         web_search_enabled: bool = False,
+        web_search_provider: str = "openrouter",
     ):
         """
         Run a full deliberation synchronously, yielding events.
@@ -127,6 +129,28 @@ class AgoraEngine:
         events = []
         all_responses = []
         total_usage = UsageData()
+        
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        # ─── Search Context Injection (Local Provider) ───
+        search_context = ""
+        use_online_model_suffix = False
+
+        if web_search_enabled:
+            # Check provider
+            if web_search_provider == "local":
+                # Perform local search
+                try:
+                    from engine.search import search_web
+                    logger.info(f"Performing local web search for: {statement[:50]}...")
+                    results = search_web(statement)
+                    search_context = f"\n\n### WEB SEARCH DEBUG CONTEXT ###\n{results}\n\n(This information was retrieved from a live web search. Use it if relevant to the user's request.)\n"
+                except Exception as e:
+                    logger.error(f"Local search failed: {e}")
+                    events.append(SessionEvent(type="error", data={"message": f"Local search failed: {e}"}))
+            else:
+                # Default to native (OpenRouter)
+                use_online_model_suffix = True
 
         # Phase 1: Call each councillor
         for c in councillors:
@@ -136,8 +160,11 @@ class AgoraEngine:
             ))
 
             model = c.get("model_override") or default_model
-            if web_search_enabled:
-                model = model + ":online"
+            
+            # Apply :online suffix if provider is 'openrouter'
+            if web_search_enabled and use_online_model_suffix:
+                if not model.endswith(":online") and not model.endswith(":free"):
+                    model = model + ":online"
 
             # Prefer rich instructions from HOCON; fall back to generic prompt
             if c.get("instructions"):
@@ -150,6 +177,14 @@ class AgoraEngine:
                     f"Your perspective bias is: {c.get('perspective', 'neutral')}\n\n"
                     f"Keep your response concise (150-250 words). Use plain language."
                 )
+            
+            # Prepend date context
+            system_prompt = f"Current Date: {current_date}\n\n" + system_prompt
+            
+            # Inject search context if present
+            # Inject search context if present
+            if search_context:
+                system_prompt = system_prompt + "\n\n" + search_context
 
             try:
                 response_text, usage = self._call_llm(model, system_prompt, statement)
@@ -216,6 +251,9 @@ class AgoraEngine:
                 "CONFIDENCE: [Low/Medium/High]\n\n"
                 "Keep your language clear and accessible."
             )
+        
+        # Prepend date context
+        coordinator_instructions = f"Current Date: {current_date}\n\n" + coordinator_instructions
 
         # Build the user message with all councillor responses
         synthesis_message = f"ORIGINAL STATEMENT:\n\"{statement}\"\n\nCOUNCILLOR RESPONSES:\n\n"
@@ -226,10 +264,19 @@ class AgoraEngine:
 
         try:
             coordinator_model = default_model
-            if web_search_enabled:
-                coordinator_model = coordinator_model + ":online"
+            
+            # Apply :online suffix if provider is 'openrouter'
+            if web_search_enabled and use_online_model_suffix:
+                if not coordinator_model.endswith(":online") and not coordinator_model.endswith(":free"):
+                    coordinator_model = coordinator_model + ":online"
+
+            # Inject search context if present
+            final_coordinator_instructions = coordinator_instructions
+            if search_context:
+                final_coordinator_instructions = coordinator_instructions + "\n\n" + search_context
+
             verdict_text, verdict_usage = self._call_llm(
-                coordinator_model, coordinator_instructions, synthesis_message
+                coordinator_model, final_coordinator_instructions, synthesis_message
             )
 
             # Extract confidence from verdict text
