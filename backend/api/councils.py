@@ -38,7 +38,10 @@ def create_council(body: CouncilCreate, db: Session = Depends(get_db)):
 def update_council(council_id: str, body: CouncilUpdate, db: Session = Depends(get_db)):
     """Update a custom council (not defaults)."""
     data = body.model_dump()
-    result = council_service.update_council(db, council_id, data)
+    try:
+        result = council_service.update_council(db, council_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not result:
         raise HTTPException(status_code=404, detail="Council not found.")
     return result
@@ -65,7 +68,10 @@ def toggle_council(council_id: str, db: Session = Depends(get_db)):
 @router.post("/{council_id}/reset")
 def reset_council(council_id: str, db: Session = Depends(get_db)):
     """Reset a default council to its original configuration."""
-    result = council_service.reset_council(db, council_id)
+    try:
+        result = council_service.reset_council(db, council_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not result:
         raise HTTPException(status_code=400, detail="Only default councils can be reset.")
     return result
