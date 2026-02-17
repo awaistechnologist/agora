@@ -174,6 +174,16 @@ export default function Chamber() {
                             </option>
                         ))}
                     </select>
+                    {selectedCouncilData?.web_search_enabled && (
+                        <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                            marginTop: '8px', padding: '4px 10px', borderRadius: '6px',
+                            fontSize: '11px', fontWeight: 600, color: 'var(--color-primary)',
+                            background: 'rgba(79,125,242,0.1)',
+                        }}>
+                            🌐 Web Search Enabled
+                        </div>
+                    )}
                 </div>
 
                 {/* Symptom Checker Warning */}

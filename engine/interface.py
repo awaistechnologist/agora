@@ -118,6 +118,7 @@ class AgoraEngine:
         council_name: str,
         default_model: str = "openai/gpt-4o",
         coordinator_instructions: str = "",
+        web_search_enabled: bool = False,
     ):
         """
         Run a full deliberation synchronously, yielding events.
@@ -135,6 +136,8 @@ class AgoraEngine:
             ))
 
             model = c.get("model_override") or default_model
+            if web_search_enabled:
+                model = model + ":online"
 
             # Prefer rich instructions from HOCON; fall back to generic prompt
             if c.get("instructions"):
@@ -222,8 +225,11 @@ class AgoraEngine:
         synthesis_message += "Please synthesise these perspectives into a clear, balanced verdict."
 
         try:
+            coordinator_model = default_model
+            if web_search_enabled:
+                coordinator_model = coordinator_model + ":online"
             verdict_text, verdict_usage = self._call_llm(
-                default_model, coordinator_instructions, synthesis_message
+                coordinator_model, coordinator_instructions, synthesis_message
             )
 
             # Extract confidence from verdict text

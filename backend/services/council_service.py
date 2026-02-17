@@ -535,6 +535,7 @@ def seed_defaults(db: Session):
             is_active=True,
             hocon_file_path=council_def.get("hocon_file"),
             coordinator_instructions=council_def.get("coordinator_instructions"),
+            web_search_enabled=council_def.get("web_search_enabled", False),
         )
         db.add(council)
         db.flush()
@@ -580,6 +581,7 @@ def list_councils(db: Session) -> list[dict]:
             "is_default": c.is_default,
             "is_active": c.is_active,
             "councillor_count": len(c.councillors),
+            "web_search_enabled": c.web_search_enabled or False,
             "model_info": model_info,
         })
     return result
@@ -602,6 +604,7 @@ def get_council(db: Session, council_id: str) -> dict | None:
         "source_council_id": council.source_council_id,
         "hocon_file_path": council.hocon_file_path,
         "coordinator_instructions": council.coordinator_instructions,
+        "web_search_enabled": council.web_search_enabled or False,
         "created_at": council.created_at,
         "updated_at": council.updated_at,
         "councillors": [
@@ -633,6 +636,7 @@ def create_council(db: Session, data: dict) -> dict:
         is_default=False,
         is_active=True,
         coordinator_instructions=data.get("coordinator_instructions"),
+        web_search_enabled=data.get("web_search_enabled", False),
     )
     db.add(council)
     db.flush()
@@ -665,6 +669,8 @@ def update_council(db: Session, council_id: str, data: dict) -> dict | None:
     council.description = data.get("description", council.description)
     council.icon = data.get("icon", council.icon)
     council.coordinator_instructions = data.get("coordinator_instructions", council.coordinator_instructions)
+    if "web_search_enabled" in data:
+        council.web_search_enabled = data["web_search_enabled"]
 
     # Replace councillors
     if "councillors" in data:
@@ -698,6 +704,7 @@ def duplicate_council(db: Session, council_id: str) -> dict | None:
         "description": original["description"],
         "icon": original["icon"],
         "coordinator_instructions": original.get("coordinator_instructions"),
+        "web_search_enabled": original.get("web_search_enabled", False),
         "councillors": [
             {
                 "name": c["name"],
@@ -750,6 +757,7 @@ def reset_council(db: Session, council_id: str) -> dict | None:
     council.description = council_def["description"]
     council.icon = council_def["icon"]
     council.coordinator_instructions = council_def.get("coordinator_instructions")
+    council.web_search_enabled = council_def.get("web_search_enabled", False)
 
     # Delete existing councillors and re-seed
     db.query(CouncillorRow).filter(CouncillorRow.council_id == council_id).delete()

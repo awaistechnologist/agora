@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Save, ArrowLeft, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Save, ArrowLeft, RotateCcw, Globe } from 'lucide-react'
 import ModelPicker from '../components/ModelPicker'
 
 const PERSPECTIVES = [
@@ -21,6 +21,7 @@ export default function CouncilEditor() {
     const [description, setDescription] = useState('')
     const [icon, setIcon] = useState('users')
     const [coordinatorInstructions, setCoordinatorInstructions] = useState('')
+    const [webSearchEnabled, setWebSearchEnabled] = useState(false)
     const [councillors, setCouncillors] = useState([
         { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: true },
         { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: false },
@@ -45,6 +46,7 @@ export default function CouncilEditor() {
                     setDescription(data.description)
                     setIcon(data.icon)
                     setCoordinatorInstructions(data.coordinator_instructions || '')
+                    setWebSearchEnabled(data.web_search_enabled || false)
                     setIsDefault(data.is_default || false)
                     setCouncillors(data.councillors.map(c => ({ ...c, expanded: false })))
                 })
@@ -92,6 +94,7 @@ export default function CouncilEditor() {
             description: description.trim(),
             icon,
             coordinator_instructions: coordinatorInstructions.trim() || null,
+            web_search_enabled: webSearchEnabled,
             councillors: validCouncillors.map(c => ({
                 name: c.name.trim(),
                 role_description: c.role_description.trim(),
@@ -205,6 +208,36 @@ export default function CouncilEditor() {
                                 ))}
                             </div>
                         </div>
+                    </div>
+
+                    {/* Web Search Toggle */}
+                    <div className="card" style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <Globe size={18} style={{ color: webSearchEnabled ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
+                            <div>
+                                <span style={{ fontSize: '13px', fontWeight: 600 }}>Web Search</span>
+                                <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
+                                    Let councillors access real-time web information when responding.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                            style={{
+                                width: '44px', height: '24px', borderRadius: '12px', border: 'none',
+                                cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+                                background: webSearchEnabled ? 'var(--color-primary)' : 'var(--color-border)',
+                                flexShrink: 0,
+                            }}
+                        >
+                            <span style={{
+                                position: 'absolute', top: '2px',
+                                left: webSearchEnabled ? '22px' : '2px',
+                                width: '20px', height: '20px', borderRadius: '50%',
+                                background: '#fff', transition: 'left 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                            }} />
+                        </button>
                     </div>
 
                     {/* Coordinator Instructions */}

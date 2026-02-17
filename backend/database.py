@@ -61,6 +61,7 @@ class CouncilRow(Base):
     source_council_id = Column(Text, nullable=True)
     hocon_file_path = Column(Text, nullable=True)
     coordinator_instructions = Column(Text, nullable=True)
+    web_search_enabled = Column(Boolean, default=False)
     created_at = Column(Text, server_default="CURRENT_TIMESTAMP")
     updated_at = Column(Text, server_default="CURRENT_TIMESTAMP")
     councillors = relationship("CouncillorRow", back_populates="council", cascade="all, delete-orphan")

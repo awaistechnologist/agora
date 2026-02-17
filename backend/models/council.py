@@ -33,6 +33,7 @@ class CouncilBase(BaseModel):
     description: str = Field(..., max_length=300)
     icon: str = Field(default="users")
     coordinator_instructions: Optional[str] = None
+    web_search_enabled: bool = False
 
 
 class CouncilCreate(CouncilBase):

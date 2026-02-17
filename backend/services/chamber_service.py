@@ -81,6 +81,7 @@ def submit_statement(db: Session, council_id: str, statement: str) -> list[dict]
             council_name=council.name,
             default_model=default_model,
             coordinator_instructions=council.coordinator_instructions or "",
+            web_search_enabled=council.web_search_enabled or False,
         )
     except Exception as e:
         session.status = "error"
