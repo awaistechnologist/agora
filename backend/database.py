@@ -62,7 +62,7 @@ class CouncilRow(Base):
     hocon_file_path = Column(Text, nullable=True)
     coordinator_instructions = Column(Text, nullable=True)
     web_search_enabled = Column(Boolean, default=False)
-    created_at = Column(Text, server_default="CURRENT_TIMESTAMP")
+    created_at = Column(Text, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
     updated_at = Column(Text, server_default="CURRENT_TIMESTAMP")
     councillors = relationship("CouncillorRow", back_populates="council", cascade="all, delete-orphan")
 
@@ -78,7 +78,7 @@ class CouncillorRow(Base):
     instructions = Column(Text, nullable=True)
     model_override = Column(Text, nullable=True)
     sort_order = Column(Integer, default=0)
-    created_at = Column(Text, server_default="CURRENT_TIMESTAMP")
+    created_at = Column(Text, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
     council = relationship("CouncilRow", back_populates="councillors")
 
 
@@ -94,7 +94,7 @@ class SessionRow(Base):
     total_tokens = Column(Integer, default=0)
     duration_seconds = Column(Float, nullable=True)
     model_summary = Column(Text, nullable=True)
-    created_at = Column(Text, server_default="CURRENT_TIMESTAMP")
+    created_at = Column(Text, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
     completed_at = Column(Text, nullable=True)
     council = relationship("CouncilRow")
     responses = relationship("ResponseRow", back_populates="session", cascade="all, delete-orphan")
@@ -113,7 +113,7 @@ class ResponseRow(Base):
     total_tokens = Column(Integer, default=0)
     cost_usd = Column(Float, default=0.0)
     sort_order = Column(Integer, default=0)
-    created_at = Column(Text, server_default="CURRENT_TIMESTAMP")
+    created_at = Column(Text, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
     session = relationship("SessionRow", back_populates="responses")
     councillor = relationship("CouncillorRow")
 

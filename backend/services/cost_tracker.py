@@ -42,7 +42,8 @@ def get_usage_stats(db: Session) -> dict:
             "model_summary": s.model_summary,
             "total_tokens": s.total_tokens,
             "cost_usd": s.total_cost_usd,
-            "created_at": s.created_at,
+            "cost_usd": s.total_cost_usd,
+            "created_at": s.created_at.replace(" ", "T") + "Z" if s.created_at else None,
         })
 
     return {
