@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/chamber", tags=["chamber"])
 @router.post("/submit")
 def submit_statement(body: SubmitRequest, db: Session = Depends(get_db)):
     """Submit a statement to a council for deliberation. Returns all events."""
-    events = chamber_service.submit_statement(db, body.council_id, body.statement)
+    events = chamber_service.submit_statement(db, body.council_id, body.statement, body.bypass_pre_check)
     return {"events": events}
 
 

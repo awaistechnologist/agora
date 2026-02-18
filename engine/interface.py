@@ -112,6 +112,44 @@ class AgoraEngine:
             return "critical"
         return "mixed"
 
+
+    def _run_pre_check(self, statement: str, council_name: str, model: str) -> dict:
+        """
+        Evaluate statement completeness.
+        Returns dict with status="proceed" or status="needs_clarification" (with questions).
+        """
+        system_prompt = (
+            f"You are the coordinator of the {council_name}.\n"
+            "Your task is to evaluate whether the user's statement contains enough context for a meaningful council deliberation.\n\n"
+            "Check for:\n"
+            "- Specificity: Is the statement concrete?\n"
+            "- Context: Is there enough background?\n"
+            "- Scope: Is it clear what feedback is needed?\n\n"
+            "IF SUFFICIENT:\n"
+            "Respond with JSON: {\"status\": \"proceed\"}\n\n"
+            "IF INSUFFICIENT:\n"
+            "Respond with JSON: {\"status\": \"needs_clarification\", \"questions\": [\"Q1\", \"Q2\"], \"understood\": \"Brief summary of what you understood\"}\n\n"
+            "Do not call any tools. Just respond with JSON."
+        )
+
+        try:
+            content, usage = self._call_llm(model, system_prompt, statement)
+            # Try to parse JSON
+            cleaned_content = content.strip()
+            if cleaned_content.startswith("```json"):
+                cleaned_content = cleaned_content[7:]
+            if cleaned_content.endswith("```"):
+                cleaned_content = cleaned_content[:-3]
+            
+            data = json.loads(cleaned_content)
+            return {"result": data, "usage": usage}
+        except Exception as e:
+            logger.error(f"Pre-check failed: {e}")
+            # detailed error logging would be good here
+            # Fallback to proceed if JSON parsing fails
+            return {"result": {"status": "proceed"}, "usage": UsageData()}
+
+
     def run_deliberation(
         self,
         statement: str,
@@ -121,6 +159,7 @@ class AgoraEngine:
         coordinator_instructions: str = "",
         web_search_enabled: bool = False,
         web_search_provider: str = "openrouter",
+        bypass_pre_check: bool = False,
     ):
         """
         Run a full deliberation synchronously, yielding events.
@@ -131,6 +170,40 @@ class AgoraEngine:
         total_usage = UsageData()
         
         current_date = datetime.now().strftime("%Y-%m-%d")
+
+        # ─── Pre-Check (Phase 2) ───
+        if not bypass_pre_check:
+            # Use default model or a cheap fast model if available
+            # For now, use default_model to be safe
+            pre_check_model = default_model
+            
+            pre_check_data = self._run_pre_check(statement, council_name, pre_check_model)
+            result = pre_check_data["result"]
+            usage = pre_check_data["usage"]
+            
+            total_usage.prompt_tokens += usage.prompt_tokens
+            total_usage.completion_tokens += usage.completion_tokens
+            total_usage.total_tokens += usage.total_tokens
+            total_usage.cost += usage.cost
+            
+            if result.get("status") == "needs_clarification":
+                events.append(SessionEvent(
+                    type="pre_check",
+                    data={
+                        "questions": result.get("questions", []),
+                        "understood": result.get("understood", ""),
+                        "cost": usage.cost
+                    }
+                ))
+                # End session here
+                events.append(SessionEvent(
+                    type="complete",
+                    data={
+                        "total_cost_usd": round(total_usage.cost, 6),
+                        "total_tokens": total_usage.total_tokens,
+                    },
+                ))
+                return events
 
         # ─── Search Context Injection (Local Provider) ───
         search_context = ""

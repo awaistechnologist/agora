@@ -7,6 +7,7 @@ from typing import Optional
 class SubmitRequest(BaseModel):
     council_id: str
     statement: str = Field(..., min_length=1)
+    bypass_pre_check: bool = False
 
 
 class ResponseSchema(BaseModel):

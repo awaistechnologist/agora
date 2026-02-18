@@ -17,7 +17,7 @@ from engine.interface import AgoraEngine
 logger = logging.getLogger("agora.chamber")
 
 
-def submit_statement(db: Session, council_id: str, statement: str) -> list[dict]:
+def submit_statement(db: Session, council_id: str, statement: str, bypass_pre_check: bool = False) -> list[dict]:
     """
     Run a deliberation: submit a statement to a council and get responses.
     Returns a list of events (synchronous for now, SSE wraps this).
@@ -84,6 +84,7 @@ def submit_statement(db: Session, council_id: str, statement: str) -> list[dict]
 
             web_search_enabled=council.web_search_enabled or False,
             web_search_provider=council.web_search_provider or "openrouter",
+            bypass_pre_check=bypass_pre_check,
         )
     except Exception as e:
         session.status = "error"
