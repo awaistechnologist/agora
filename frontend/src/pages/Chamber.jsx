@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { Send, Loader, DollarSign, Clock, Brain, AlertTriangle } from 'lucide-react'
+import PreCheckCard from '../components/PreCheckCard'
 
 const STANCE_COLORS = {
     supportive: { bg: '#ECFDF5', color: '#059669', border: 'rgba(5,150,105,0.2)' },
@@ -22,6 +23,7 @@ export default function Chamber() {
     const [error, setError] = useState('')
     const [thinkingName, setThinkingName] = useState('')
     const [loadedSession, setLoadedSession] = useState(null)
+    const [preCheckData, setPreCheckData] = useState(null)
     const containerRef = useRef(null)
 
     useEffect(() => {
@@ -84,20 +86,26 @@ export default function Chamber() {
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
-    const submit = async () => {
-        if (!selectedCouncil || !statement.trim() || isRunning) return
+    const submit = async (customStatement = null, bypass = false) => {
+        const finalStatement = customStatement || statement
+        if (!selectedCouncil || !finalStatement.trim() || isRunning) return
 
         setIsRunning(true)
         setResponses([])
         setVerdict(null)
         setError('')
         setThinkingName('')
+        if (!bypass && !customStatement) setPreCheckData(null) // Only clear if starting fresh
 
         try {
             const res = await fetch('/api/chamber/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ council_id: selectedCouncil, statement: statement.trim() }),
+                body: JSON.stringify({
+                    council_id: selectedCouncil,
+                    statement: finalStatement.trim(),
+                    bypass_pre_check: bypass
+                }),
             })
             const data = await res.json()
 
@@ -115,6 +123,7 @@ export default function Chamber() {
 
                 if (ev.type === 'councillor_start') {
                     setThinkingName(ev.data.councillor_name)
+                    setPreCheckData(null) // Clear pre-check if we are proceeding
                     scrollToBottom()
                     await sleep(800)
                 } else if (ev.type === 'councillor_response') {
@@ -126,6 +135,10 @@ export default function Chamber() {
                     setThinkingName('')
                     await sleep(400)
                     setVerdict(ev.data)
+                    scrollToBottom()
+                } else if (ev.type === 'pre_check') {
+                    setThinkingName('')
+                    setPreCheckData(ev.data)
                     scrollToBottom()
                 } else if (ev.type === 'error') {
                     setError(ev.data.message)
@@ -225,7 +238,7 @@ export default function Chamber() {
                         }}
                     />
                     <button
-                        onClick={submit}
+                        onClick={() => submit()}
                         disabled={isRunning || !statement.trim() || !selectedCouncil}
                         style={{
                             position: 'absolute', right: '10px', bottom: '10px',
@@ -256,6 +269,18 @@ export default function Chamber() {
 
             {/* Results */}
             <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '40px' }}>
+
+                {/* Pre-Check Card */}
+                {preCheckData && (
+                    <PreCheckCard
+                        data={preCheckData}
+                        onRevise={(addContext) => {
+                            setStatement(`${statement}\n\nAdditional Context: ${addContext}`)
+                            submit(`${statement}\n\nAdditional Context: ${addContext}`)
+                        }}
+                        onBypass={() => submit(null, true)}
+                    />
+                )}
 
                 {/* Active councillor "thinking" indicator */}
                 {thinkingName && (

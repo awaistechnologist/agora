@@ -12,6 +12,14 @@ fi
 # Activate and run
 source venv/bin/activate
 
+# Check python version inside venv
+python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "❌ Error: The virtual environment's Python version is too old (< 3.12)."
+    echo "   Please remove the 'venv' directory and run ./install.sh again."
+    exit 1
+fi
+
 # Build frontend if dist is missing
 if [ ! -d "frontend/dist" ]; then
     echo "📦 Building frontend..."

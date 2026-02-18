@@ -66,6 +66,7 @@ class CouncilRow(Base):
     created_at = Column(Text, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
     updated_at = Column(Text, server_default="CURRENT_TIMESTAMP")
     web_search_provider = Column(Text, default="openrouter")
+    pre_check_enabled = Column(Boolean, default=True)
     councillors = relationship("CouncillorRow", back_populates="council", cascade="all, delete-orphan")
 
 
