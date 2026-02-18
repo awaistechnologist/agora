@@ -23,6 +23,7 @@ export default function CouncilEditor() {
     const [coordinatorInstructions, setCoordinatorInstructions] = useState('')
     const [webSearchEnabled, setWebSearchEnabled] = useState(false)
     const [webSearchProvider, setWebSearchProvider] = useState('openrouter')
+    const [preCheckEnabled, setPreCheckEnabled] = useState(true)
     const [councillors, setCouncillors] = useState([
         { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: true },
         { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: false },
@@ -49,6 +50,7 @@ export default function CouncilEditor() {
                     setCoordinatorInstructions(data.coordinator_instructions || '')
                     setWebSearchEnabled(data.web_search_enabled || false)
                     setWebSearchProvider(data.web_search_provider || 'openrouter')
+                    setPreCheckEnabled(data.pre_check_enabled !== undefined ? data.pre_check_enabled : true)
                     setIsDefault(data.is_default || false)
                     setCouncillors(data.councillors.map(c => ({ ...c, expanded: false })))
                 })
@@ -98,6 +100,7 @@ export default function CouncilEditor() {
             coordinator_instructions: coordinatorInstructions.trim() || null,
             web_search_enabled: webSearchEnabled,
             web_search_provider: webSearchProvider,
+            pre_check_enabled: preCheckEnabled,
             councillors: validCouncillors.map(c => ({
                 id: c.id,
                 name: c.name.trim(),
@@ -277,6 +280,44 @@ export default function CouncilEditor() {
                                 </div>
                             </div>
                         )}
+                    </div>
+
+                    {/* Pre-Check Toggle */}
+                    <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{
+                                    width: '18px', height: '18px', borderRadius: '50%', border: '2px solid',
+                                    borderColor: preCheckEnabled ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: preCheckEnabled ? 'var(--color-primary)' : 'transparent' }} />
+                                </div>
+                                <div>
+                                    <span style={{ fontSize: '13px', fontWeight: 600 }}>Pre-Submission Coordinator</span>
+                                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px', lineHeight: 1.4 }}>
+                                        Automatically clarify vague statements before deliberation.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setPreCheckEnabled(!preCheckEnabled)}
+                                style={{
+                                    width: '44px', height: '24px', borderRadius: '12px', border: 'none',
+                                    cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+                                    background: preCheckEnabled ? 'var(--color-primary)' : 'var(--color-border)',
+                                    flexShrink: 0,
+                                }}
+                            >
+                                <span style={{
+                                    position: 'absolute', top: '2px',
+                                    left: preCheckEnabled ? '22px' : '2px',
+                                    width: '20px', height: '20px', borderRadius: '50%',
+                                    background: '#fff', transition: 'left 0.2s',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                                }} />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Coordinator Instructions */}

@@ -85,6 +85,7 @@ def submit_statement(db: Session, council_id: str, statement: str, bypass_pre_ch
             web_search_enabled=council.web_search_enabled or False,
             web_search_provider=council.web_search_provider or "openrouter",
             bypass_pre_check=bypass_pre_check,
+            pre_check_enabled=council.pre_check_enabled if council.pre_check_enabled is not None else True,
         )
     except Exception as e:
         session.status = "error"

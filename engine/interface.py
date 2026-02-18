@@ -160,6 +160,7 @@ class AgoraEngine:
         web_search_enabled: bool = False,
         web_search_provider: str = "openrouter",
         bypass_pre_check: bool = False,
+        pre_check_enabled: bool = True,
     ):
         """
         Run a full deliberation synchronously, yielding events.
@@ -172,7 +173,7 @@ class AgoraEngine:
         current_date = datetime.now().strftime("%Y-%m-%d")
 
         # ─── Pre-Check (Phase 2) ───
-        if not bypass_pre_check:
+        if pre_check_enabled and not bypass_pre_check:
             # Use default model or a cheap fast model if available
             # For now, use default_model to be safe
             pre_check_model = default_model

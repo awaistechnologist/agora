@@ -7,10 +7,38 @@ echo "🏛️  Agora — Install"
 echo "==================="
 echo ""
 
-# Python venv
+# Python Detection & Venv Creation
+echo "🔍 Checking for Python 3.12+ ..."
+
+PYTHON_CMD=""
+
+# Helper function to check version
+check_version() {
+    $1 -c "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null
+}
+
+if command -v python3.13 >/dev/null 2>&1; then
+    PYTHON_CMD="python3.13"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PYTHON_CMD="python3.12"
+elif command -v python3 >/dev/null 2>&1 && check_version python3; then
+    PYTHON_CMD="python3"
+elif command -v python >/dev/null 2>&1 && check_version python; then
+    PYTHON_CMD="python"
+fi
+
+if [ -z "$PYTHON_CMD" ]; then
+    echo "❌ Error: Python 3.12 or newer is required."
+    echo "   Please install python3.12 or python3.13."
+    echo "   On Ubuntu: sudo apt install python3.12 python3.12-venv"
+    exit 1
+fi
+
+echo "✅ Found compatible Python: $($PYTHON_CMD --version)"
+
 if [ ! -d "venv" ]; then
-    echo "📦 Creating Python virtual environment..."
-    python3 -m venv venv
+    echo "📦 Creating Python virtual environment using $PYTHON_CMD..."
+    $PYTHON_CMD -m venv venv
 else
     echo "✅ Virtual environment already exists."
 fi

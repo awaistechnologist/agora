@@ -750,6 +750,7 @@ def list_councils(db: Session) -> list[dict]:
 
             "web_search_enabled": c.web_search_enabled or False,
             "web_search_provider": c.web_search_provider or "openrouter",
+            "pre_check_enabled": c.pre_check_enabled if c.pre_check_enabled is not None else True,
             "model_info": model_info,
         })
     return result
@@ -775,6 +776,7 @@ def get_council(db: Session, council_id: str) -> dict | None:
 
         "web_search_enabled": council.web_search_enabled or False,
         "web_search_provider": council.web_search_provider or "openrouter",
+        "pre_check_enabled": council.pre_check_enabled if council.pre_check_enabled is not None else True,
         "created_at": council.created_at,
         "updated_at": council.updated_at,
         "councillors": [
@@ -808,6 +810,7 @@ def create_council(db: Session, data: dict) -> dict:
         coordinator_instructions=data.get("coordinator_instructions"),
         web_search_enabled=data.get("web_search_enabled", False),
         web_search_provider=data.get("web_search_provider", "openrouter"),
+        pre_check_enabled=data.get("pre_check_enabled", True),
     )
     db.add(council)
     db.flush()
@@ -844,6 +847,8 @@ def update_council(db: Session, council_id: str, data: dict) -> dict | None:
         council.web_search_enabled = data["web_search_enabled"]
     if "web_search_provider" in data:
         council.web_search_provider = data["web_search_provider"]
+    if "pre_check_enabled" in data:
+        council.pre_check_enabled = data["pre_check_enabled"]
 
     # Replace councillors
     # Replace/Update councillors

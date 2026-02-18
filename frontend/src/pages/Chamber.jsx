@@ -238,7 +238,7 @@ export default function Chamber() {
                         }}
                     />
                     <button
-                        onClick={submit}
+                        onClick={() => submit()}
                         disabled={isRunning || !statement.trim() || !selectedCouncil}
                         style={{
                             position: 'absolute', right: '10px', bottom: '10px',

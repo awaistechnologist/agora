@@ -35,18 +35,26 @@ class CouncillorResponse(CouncillorBase):
 class CouncilBase(BaseModel):
     name: str = Field(..., max_length=60)
     description: str = Field(..., max_length=300)
-    icon: str = Field(default="users")
+    hocon_file_path: Optional[str] = None
     coordinator_instructions: Optional[str] = None
     web_search_enabled: bool = False
     web_search_provider: str = "openrouter"
+    pre_check_enabled: bool = True
 
 
 class CouncilCreate(CouncilBase):
-    councillors: list[CouncillorCreate] = Field(..., min_length=2, max_length=10)
+    pass
 
 
-class CouncilUpdate(CouncilBase):
-    councillors: list[CouncillorUpdate] = Field(..., min_length=2, max_length=10)
+class CouncilUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    is_active: Optional[bool] = None
+    coordinator_instructions: Optional[str] = None
+    web_search_enabled: Optional[bool] = None
+    web_search_provider: Optional[str] = None
+    pre_check_enabled: Optional[bool] = None
 
 
 class CouncilResponse(CouncilBase):
@@ -54,7 +62,6 @@ class CouncilResponse(CouncilBase):
     is_default: bool
     is_active: bool
     source_council_id: Optional[str] = None
-    hocon_file_path: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     councillors: list[CouncillorResponse] = []
