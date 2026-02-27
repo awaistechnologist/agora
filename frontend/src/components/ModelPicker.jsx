@@ -4,10 +4,48 @@ import { Search, X, ChevronDown } from 'lucide-react'
 /**
  * Searchable model picker dropdown.
  * Props:
- *   models    — array of { id, name }
+ *   models    — array of { id, name, prompt_price_per_million, completion_price_per_million, is_free }
  *   value     — currently selected model id (or null for default)
  *   onChange  — callback(modelId | null)
  */
+
+// Cost tier based on prompt price per 1M tokens
+function getCostTier(model) {
+    if (!model) return null
+    if (model.is_free || (model.prompt_price_per_million === 0 && model.completion_price_per_million === 0)) {
+        return { label: 'FREE', color: '#059669', bg: '#ECFDF5', border: 'rgba(5,150,105,0.2)', title: 'Free to use' }
+    }
+    const p = model.prompt_price_per_million || 0
+    if (p < 1) return { label: '$', color: '#059669', bg: '#ECFDF5', border: 'rgba(5,150,105,0.2)', title: `~$${p.toFixed(2)}/M tokens` }
+    if (p < 5) return { label: '$$', color: '#D97706', bg: '#FFFBEB', border: 'rgba(217,119,6,0.2)', title: `~$${p.toFixed(2)}/M tokens` }
+    if (p < 15) return { label: '$$$', color: '#DC2626', bg: '#FEF2F2', border: 'rgba(220,38,38,0.2)', title: `~$${p.toFixed(2)}/M tokens` }
+    return { label: '$$$$', color: '#7C3AED', bg: '#F5F3FF', border: 'rgba(124,58,237,0.2)', title: `~$${p.toFixed(2)}/M tokens (expensive)` }
+}
+
+function CostBadge({ tier, small = false }) {
+    if (!tier) return null
+    return (
+        <span
+            title={tier.title}
+            style={{
+                fontSize: small ? '10px' : '11px',
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                padding: small ? '1px 5px' : '2px 6px',
+                borderRadius: '4px',
+                flexShrink: 0,
+                letterSpacing: '0.02em',
+                background: tier.bg,
+                color: tier.color,
+                border: `1px solid ${tier.border}`,
+                lineHeight: 1.4,
+            }}
+        >
+            {tier.label}
+        </span>
+    )
+}
+
 export default function ModelPicker({ models, value, onChange }) {
     const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
@@ -38,9 +76,11 @@ export default function ModelPicker({ models, value, onChange }) {
         return label.includes(query.toLowerCase())
     })
 
-    const selectedLabel = value
-        ? (models.find(m => m.id === value)?.name || value.split('/').pop())
+    const selectedModel = value ? models.find(m => m.id === value) : null
+    const selectedLabel = selectedModel
+        ? (selectedModel.name || value.split('/').pop())
         : 'Use default model'
+    const selectedTier = selectedModel ? getCostTier(selectedModel) : null
 
     return (
         <div ref={containerRef} style={{ position: 'relative' }}>
@@ -64,7 +104,8 @@ export default function ModelPicker({ models, value, onChange }) {
                 }}>
                     {selectedLabel}
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                    {selectedTier && <CostBadge tier={selectedTier} small />}
                     {value && (
                         <span
                             onClick={(e) => { e.stopPropagation(); onChange(null); setOpen(false) }}
@@ -95,7 +136,7 @@ export default function ModelPicker({ models, value, onChange }) {
                     boxShadow: '0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)',
                     zIndex: 50,
                     animation: 'fadeIn 0.12s ease-out',
-                    maxHeight: '280px',
+                    maxHeight: '300px',
                     display: 'flex', flexDirection: 'column',
                 }}>
                     {/* Search input */}
@@ -125,6 +166,29 @@ export default function ModelPicker({ models, value, onChange }) {
                                 <X size={12} />
                             </span>
                         )}
+                    </div>
+
+                    {/* Cost legend */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap',
+                        padding: '6px 12px',
+                        borderBottom: '1px solid var(--color-border-light)',
+                        background: 'var(--color-bg-base)',
+                    }}>
+                        <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginRight: '2px' }}>Cost/1M tokens:</span>
+                        {[
+                            { label: 'FREE', color: '#059669', bg: '#ECFDF5', border: 'rgba(5,150,105,0.2)', title: 'Free' },
+                            { label: '$', color: '#059669', bg: '#ECFDF5', border: 'rgba(5,150,105,0.2)', title: '< $1' },
+                            { label: '$$', color: '#D97706', bg: '#FFFBEB', border: 'rgba(217,119,6,0.2)', title: '$1–5' },
+                            { label: '$$$', color: '#DC2626', bg: '#FEF2F2', border: 'rgba(220,38,38,0.2)', title: '$5–15' },
+                            { label: '$$$$', color: '#7C3AED', bg: '#F5F3FF', border: 'rgba(124,58,237,0.2)', title: '> $15' },
+                        ].map(t => (
+                            <span key={t.label} title={t.title} style={{
+                                fontSize: '10px', fontWeight: 700, fontFamily: 'monospace',
+                                padding: '1px 5px', borderRadius: '4px',
+                                background: t.bg, color: t.color, border: `1px solid ${t.border}`,
+                            }}>{t.label}</span>
+                        ))}
                     </div>
 
                     {/* Options */}
@@ -165,8 +229,8 @@ export default function ModelPicker({ models, value, onChange }) {
                         {filtered.map(m => {
                             const label = m.name || m.id
                             const isSelected = m.id === value
-                            // Extract provider from id (e.g., "openai/gpt-4o" -> "openai")
                             const provider = m.id.includes('/') ? m.id.split('/')[0] : null
+                            const tier = getCostTier(m)
 
                             return (
                                 <button
@@ -175,7 +239,7 @@ export default function ModelPicker({ models, value, onChange }) {
                                     onClick={() => { onChange(m.id); setOpen(false); setQuery('') }}
                                     style={{
                                         width: '100%', textAlign: 'left',
-                                        padding: '8px 10px', borderRadius: '6px',
+                                        padding: '7px 10px', borderRadius: '6px',
                                         display: 'flex', alignItems: 'center', gap: '8px',
                                         background: isSelected ? 'var(--color-sidebar-active)' : 'transparent',
                                         border: 'none', cursor: 'pointer',
@@ -192,14 +256,16 @@ export default function ModelPicker({ models, value, onChange }) {
                                     }}>
                                         {label}
                                     </span>
-                                    {provider && (
-                                        <span style={{
-                                            fontSize: '11px', color: 'var(--color-text-muted)',
-                                            flexShrink: 0,
-                                        }}>
-                                            {provider}
-                                        </span>
-                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                        {provider && (
+                                            <span style={{
+                                                fontSize: '11px', color: 'var(--color-text-muted)',
+                                            }}>
+                                                {provider}
+                                            </span>
+                                        )}
+                                        <CostBadge tier={tier} />
+                                    </div>
                                 </button>
                             )
                         })}
