@@ -1,6 +1,27 @@
 import { useState, useEffect } from 'react'
 import { Eye, EyeOff, Check, X, ExternalLink } from 'lucide-react'
 
+function getCostTier(m) {
+    if (!m) return null
+    if (m.is_free || (m.prompt_price_per_million === 0 && m.completion_price_per_million === 0)) return null // FREE badge already shown
+    const p = m.prompt_price_per_million || 0
+    if (p < 1) return { label: '$', color: '#059669', bg: '#ECFDF5', border: 'rgba(5,150,105,0.2)', title: `~$${p.toFixed(2)}/M prompt tokens` }
+    if (p < 5) return { label: '$$', color: '#D97706', bg: '#FFFBEB', border: 'rgba(217,119,6,0.2)', title: `~$${p.toFixed(2)}/M prompt tokens` }
+    if (p < 15) return { label: '$$$', color: '#DC2626', bg: '#FEF2F2', border: 'rgba(220,38,38,0.2)', title: `~$${p.toFixed(2)}/M prompt tokens` }
+    return { label: '$$$$', color: '#7C3AED', bg: '#F5F3FF', border: 'rgba(124,58,237,0.2)', title: `~$${p.toFixed(2)}/M prompt tokens (expensive)` }
+}
+
+function TierBadge({ tier }) {
+    if (!tier) return null
+    return (
+        <span title={tier.title} style={{
+            fontSize: '10px', fontWeight: 700, fontFamily: 'monospace',
+            padding: '1px 5px', borderRadius: '4px', flexShrink: 0,
+            background: tier.bg, color: tier.color, border: `1px solid ${tier.border}`,
+        }}>{tier.label}</span>
+    )
+}
+
 export default function Settings() {
     const [settings, setSettings] = useState({ openrouter_key_set: false, openrouter_key_preview: '', default_model: 'openai/gpt-4o' })
     const [apiKey, setApiKey] = useState('')
@@ -157,6 +178,7 @@ export default function Settings() {
                             }}>
                                 <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current</span>
                                 <span style={{ flex: 1, fontSize: '13px', fontWeight: 500 }}>{currentModel.name}</span>
+                                <TierBadge tier={getCostTier(currentModel)} />
                                 <span style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-cost)' }}>
                                     {currentModel.is_free ? 'Free' : `$${currentModel.prompt_price_per_million.toFixed(2)} / $${currentModel.completion_price_per_million.toFixed(2)}`}
                                 </span>
@@ -228,6 +250,7 @@ export default function Settings() {
                                                         )}
                                                         {m.name}
                                                     </span>
+                                                    <TierBadge tier={getCostTier(m)} />
                                                     <span style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-cost)' }}>
                                                         {m.is_free ? 'Free' : `$${m.prompt_price_per_million.toFixed(2)} / $${m.completion_price_per_million.toFixed(2)}`}
                                                     </span>
