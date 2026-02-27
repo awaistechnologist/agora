@@ -20,11 +20,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Build frontend if dist is missing
-if [ ! -d "frontend/dist" ]; then
-    echo "📦 Building frontend..."
-    cd frontend && npm run build && cd ..
-fi
+# Always rebuild frontend to pick up any code changes
+echo "📦 Building frontend..."
+cd frontend && npm run build --silent && cd ..
+echo "✅ Frontend built."
+
 
 echo ""
 echo "    ╔═══════════════════════════════════════╗"
