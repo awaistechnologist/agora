@@ -55,6 +55,7 @@ class CouncilUpdate(BaseModel):
     web_search_enabled: Optional[bool] = None
     web_search_provider: Optional[str] = None
     pre_check_enabled: Optional[bool] = None
+    councillors: Optional[list[CouncillorUpdate]] = None
 
 
 class CouncilResponse(CouncilBase):
