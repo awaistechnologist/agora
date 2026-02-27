@@ -68,7 +68,7 @@ class AgoraEngine:
             "X-Title": "Agora",
         }
 
-    def _call_llm(self, model: str, system_prompt: str, user_message: str) -> tuple[str, UsageData]:
+    def _call_llm(self, model: str, system_prompt: str, user_message: str, max_tokens: int = 1000) -> tuple[str, UsageData]:
         """Make a synchronous LLM call to OpenRouter."""
         payload = {
             "model": model,
@@ -77,7 +77,7 @@ class AgoraEngine:
                 {"role": "user", "content": user_message},
             ],
             "temperature": 0.7,
-            "max_tokens": 1000,
+            "max_tokens": max_tokens,
         }
 
         try:
@@ -85,7 +85,7 @@ class AgoraEngine:
                 OPENROUTER_CHAT_URL,
                 json=payload,
                 headers=self._get_headers(),
-                timeout=60.0,
+                timeout=180.0,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -349,9 +349,14 @@ class AgoraEngine:
             if search_context:
                 final_coordinator_instructions = coordinator_instructions + "\n\n" + search_context
 
+            # Coordinator needs more tokens than councillors — it synthesises all responses
             verdict_text, verdict_usage = self._call_llm(
-                coordinator_model, final_coordinator_instructions, synthesis_message
+                coordinator_model, final_coordinator_instructions, synthesis_message,
+                max_tokens=2500
             )
+
+            if not verdict_text or not verdict_text.strip():
+                raise ValueError("Coordinator returned an empty response. The model may have hit a context or content limit.")
 
             # Extract confidence from verdict text
             confidence = "medium"
