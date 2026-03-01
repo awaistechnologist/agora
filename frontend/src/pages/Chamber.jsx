@@ -95,7 +95,7 @@ export default function Chamber() {
         setVerdict(null)
         setError('')
         setThinkingName('')
-        if (!bypass && !customStatement) setPreCheckData(null) // Only clear if starting fresh
+        setPreCheckData(null)
 
         try {
             const res = await fetch('/api/chamber/submit', {
@@ -269,6 +269,32 @@ export default function Chamber() {
 
             {/* Results */}
             <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '40px' }}>
+
+                {/* Central Loader */}
+                {isRunning && !thinkingName && responses.length === 0 && !preCheckData && (
+                    <div className="animate-fade-in" style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '60px 0', opacity: 0.8
+                    }}>
+                        <div style={{ position: 'relative', width: '60px', height: '60px', marginBottom: '20px' }}>
+                            <div style={{
+                                position: 'absolute', inset: 0, borderRadius: '50%',
+                                border: '4px solid #E5E7EB', borderTopColor: '#4F7DF2',
+                                animation: 'spin 1s linear infinite'
+                            }} />
+                            <Brain size={24} style={{
+                                position: 'absolute', top: '50%', left: '50%',
+                                transform: 'translate(-50%, -50%)', color: '#4F7DF2'
+                            }} />
+                        </div>
+                        <p style={{ fontSize: '16px', fontWeight: 600, color: '#374151' }}>
+                            Convening the Council...
+                        </p>
+                        <p style={{ fontSize: '13px', color: '#9CA3AF', marginTop: '6px' }}>
+                            Gathering perspectives and analysing statement.
+                        </p>
+                    </div>
+                )}
 
                 {/* Pre-Check Card */}
                 {preCheckData && (
