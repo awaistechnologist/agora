@@ -34,7 +34,8 @@ AGORA_ENTRY="{\"command\": \"$PYTHON\", \"args\": [\"$SERVER\"]}"
 # ── Known MCP client configs ───────────────────────────────────────────────
 # Format: "Label|config_path"
 CLIENTS=(
-    "Google Antigravity (Gemini)|$HOME/.gemini/settings.json"
+    "Google Antigravity|$HOME/.gemini/antigravity/mcp_config.json"
+    "Google Gemini CLI|$HOME/.gemini/settings.json"
     "Claude Desktop|$HOME/.claude/claude_desktop_config.json"
     "Cursor|$HOME/.cursor/mcp.json"
     "Windsurf|$HOME/.windsurf/mcp.json"
