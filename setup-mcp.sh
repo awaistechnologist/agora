@@ -46,6 +46,16 @@ echo "  Choose which apps to configure:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
+if command -v claude >/dev/null 2>&1; then
+    echo "🤖 Claude Code (CLI) detected."
+    read -p "   Configure Claude Code (global)? (y/N): " ANSWER
+    if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
+        claude mcp add -s user agora "$PYTHON" "$SERVER" >/dev/null 2>&1 || claude mcp add agora "$PYTHON" "$SERVER" >/dev/null 2>&1
+        echo "   ✅ Added to Claude Code."
+    fi
+    echo ""
+fi
+
 if command -v jq >/dev/null 2>&1; then
     # Interactive mode with jq available — write directly
     for CLIENT in "${CLIENTS[@]}"; do
