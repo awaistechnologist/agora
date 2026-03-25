@@ -28,8 +28,51 @@ fi
 echo "✅ MCP server is ready."
 echo ""
 
-# ── Build JSON config block ────────────────────────────────────────────────
-CONFIG=$(cat <<EOF
+# ── Build the agora JSON entry ─────────────────────────────────────────────
+AGORA_ENTRY="{\"command\": \"$PYTHON\", \"args\": [\"$SERVER\"]}"
+
+# ── Known MCP client configs ───────────────────────────────────────────────
+# Format: "Label|config_path"
+CLIENTS=(
+    "Google Antigravity (Gemini)|$HOME/.gemini/settings.json"
+    "Claude Desktop|$HOME/.claude/claude_desktop_config.json"
+    "Cursor|$HOME/.cursor/mcp.json"
+    "Windsurf|$HOME/.windsurf/mcp.json"
+)
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Choose which apps to configure:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+if command -v jq >/dev/null 2>&1; then
+    # Interactive mode with jq available — write directly
+    for CLIENT in "${CLIENTS[@]}"; do
+        LABEL="${CLIENT%%|*}"
+        CFG_PATH="${CLIENT##*|}"
+
+        read -p "   Configure $LABEL? (y/N): " ANSWER
+        if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
+            mkdir -p "$(dirname "$CFG_PATH")"
+            if [ -f "$CFG_PATH" ]; then
+                # Merge agora into existing config
+                jq --argjson entry "$AGORA_ENTRY" \
+                    '.mcpServers.agora = $entry' \
+                    "$CFG_PATH" > "${CFG_PATH}.tmp" && mv "${CFG_PATH}.tmp" "$CFG_PATH"
+            else
+                # Create fresh config
+                echo "{\"mcpServers\": {\"agora\": $AGORA_ENTRY}}" | jq . > "$CFG_PATH"
+            fi
+            echo "   ✅ Written to $CFG_PATH — restart $LABEL to activate."
+        fi
+        echo ""
+    done
+
+else
+    # No jq — print snippet for manual paste
+    echo "  Paste this into each app's MCP config:"
+    echo ""
+    cat <<EOF
 {
   "mcpServers": {
     "agora": {
@@ -39,51 +82,19 @@ CONFIG=$(cat <<EOF
   }
 }
 EOF
-)
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Add the following to your MCP client config:"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "$CONFIG"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-# ── Claude Desktop: offer to write config automatically ───────────────────
-CLAUDE_CONFIG="$HOME/.claude/claude_desktop_config.json"
-
-if command -v jq >/dev/null 2>&1; then
-    # jq available — we can safely merge configs
-    echo "🤖 Claude Desktop detected."
     echo ""
-    read -p "   Auto-configure Claude Desktop? (y/N): " ANSWER
-    if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-        mkdir -p "$(dirname "$CLAUDE_CONFIG")"
-        if [ -f "$CLAUDE_CONFIG" ]; then
-            # Merge into existing config
-            EXISTING=$(cat "$CLAUDE_CONFIG")
-            echo "$EXISTING" | jq --arg py "$PYTHON" --arg srv "$SERVER" \
-                '.mcpServers.agora = {"command": $py, "args": [$srv]}' \
-                > "$CLAUDE_CONFIG"
-        else
-            # Create fresh config
-            echo "$CONFIG" > "$CLAUDE_CONFIG"
-        fi
-        echo "   ✅ Written to $CLAUDE_CONFIG"
-        echo "   Restart Claude Desktop to activate Agora tools."
-    fi
-else
-    # No jq — just tell the user where to paste
-    echo "📋 Claude Desktop config location:"
-    echo "   $CLAUDE_CONFIG"
+    echo "  Config file locations:"
+    for CLIENT in "${CLIENTS[@]}"; do
+        LABEL="${CLIENT%%|*}"
+        CFG_PATH="${CLIENT##*|}"
+        echo "    $LABEL:  $CFG_PATH"
+    done
     echo ""
-    echo "   Paste the config above into that file, then restart Claude Desktop."
+    echo "  (Install jq for automatic configuration: brew install jq)"
 fi
 
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "📖 Cursor / Windsurf: paste the config into .cursor/mcp.json or .windsurf/mcp.json"
-echo ""
-echo "💡 Make sure to configure your OpenRouter API key in the Agora web UI first:"
+echo "💡 Make sure your OpenRouter API key is set first:"
 echo "   ./start.sh  →  Settings  →  Add your OpenRouter key"
 echo ""
