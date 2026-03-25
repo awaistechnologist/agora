@@ -114,7 +114,7 @@ pwd  # note the repo path, e.g. /Users/you/agora
 
 **3. Add to your MCP client config:**
 
-#### Claude Desktop (`~/.claude/claude_desktop_config.json`)
+#### Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {

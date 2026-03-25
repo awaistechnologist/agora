@@ -36,7 +36,7 @@ AGORA_ENTRY="{\"command\": \"$PYTHON\", \"args\": [\"$SERVER\"]}"
 CLIENTS=(
     "Google Antigravity|$HOME/.gemini/antigravity/mcp_config.json"
     "Google Gemini CLI|$HOME/.gemini/settings.json"
-    "Claude Desktop|$HOME/.claude/claude_desktop_config.json"
+    "Claude Desktop|$HOME/Library/Application Support/Claude/claude_desktop_config.json"
     "Cursor|$HOME/.cursor/mcp.json"
     "Windsurf|$HOME/.windsurf/mcp.json"
 )
