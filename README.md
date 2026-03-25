@@ -83,8 +83,69 @@ Visit **http://localhost:8080** in your browser.
 -   `backend/`: Python FastAPI server and business logic.
 -   `frontend/`: React + Vite application.
 -   `engine/`: Core deliberation engine (pure Python, framework-agnostic).
+-   `mcp_server/`: Local MCP server — exposes councils as AI tools.
 -   `spec/`: HOCON specifications for councils.
 -   `data/`: Local SQLite database (gitignored).
+
+## 🔌 MCP Server (Claude Desktop / Cursor / Windsurf)
+
+Agora can run as a **local MCP server**, letting any MCP-compatible AI app call your councils as tools — no browser required.
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `list_councils` | List all active councils |
+| `get_council_details` | Get councillors and metadata for a specific council |
+| `run_deliberation` | Submit a statement and receive the full verdict |
+
+### Setup
+
+**1. Run the installer** (first time only — installs the `mcp` dependency):
+```bash
+./install.sh
+```
+
+**2. Find your venv Python path:**
+```bash
+# macOS/Linux
+pwd  # note the repo path, e.g. /Users/you/agora
+```
+
+**3. Add to your MCP client config:**
+
+#### Claude Desktop (`~/.claude/claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "agora": {
+      "command": "/Users/you/agora/venv/bin/python",
+      "args": ["/Users/you/agora/mcp_server/server.py"]
+    }
+  }
+}
+```
+
+#### Cursor / Windsurf (`.cursor/mcp.json` or `.windsurf/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "agora": {
+      "command": "/Users/you/agora/venv/bin/python",
+      "args": ["/Users/you/agora/mcp_server/server.py"]
+    }
+  }
+}
+```
+
+**4. Restart your AI app.** The Agora tools will appear automatically.
+
+> **Note:** Your OpenRouter API key must be configured via the Agora web UI (`./start.sh` → Settings) before the MCP server can run deliberations. The MCP server shares the same local database.
+
+### Example prompt (Claude Desktop)
+*"Use the agora tool to run my idea 'a local-first habit tracker with AI coaching' through the Idea Validator council."*
+
+---
 
 ## Contributing
 

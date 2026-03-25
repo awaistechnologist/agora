@@ -8,3 +8,4 @@ cryptography
 pydantic
 sse-starlette
 ddgs>=9.10.0
+mcp>=1.0.0
