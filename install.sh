@@ -58,5 +58,20 @@ npm run build
 cd ..
 echo "✅ Frontend built."
 
+# jq (used by setup-mcp.sh for automatic MCP client configuration)
+if ! command -v jq >/dev/null 2>&1; then
+    echo "📦 Installing jq..."
+    if command -v brew >/dev/null 2>&1; then
+        brew install jq --quiet
+    elif command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get install -y -q jq
+    else
+        echo "⚠️  Could not install jq automatically. Install it manually (brew install jq) for automatic MCP setup."
+    fi
+else
+    echo "✅ jq already installed."
+fi
+
 echo ""
 echo "🎉 All done! Run ./start.sh to launch Agora."
+echo "   Then run ./setup-mcp.sh to connect your AI apps."
