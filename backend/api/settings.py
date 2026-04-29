@@ -23,7 +23,9 @@ def update_settings(body: SettingsUpdate, db: Session = Depends(get_db)):
     data = settings_service.update_settings(
         db,
         openrouter_key=body.openrouter_key,
-        default_model=body.default_model,
+        default_model_fast=body.default_model_fast,
+        default_model_balanced=body.default_model_balanced,
+        default_model_powerful=body.default_model_powerful,
     )
     return SettingsResponse(**data)
 

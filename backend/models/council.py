@@ -11,6 +11,8 @@ class CouncillorBase(BaseModel):
     expertise_area: Optional[str] = None
     perspective: str = Field(default="neutral")
     instructions: Optional[str] = None
+    # 'fast' | 'balanced' | 'powerful'. None = balanced.
+    model_tier: Optional[str] = None
     model_override: Optional[str] = None
     sort_order: int = 0
 
@@ -40,6 +42,8 @@ class CouncilBase(BaseModel):
     web_search_enabled: bool = False
     web_search_provider: str = "openrouter"
     pre_check_enabled: bool = True
+    # Coordinator tier: 'fast' | 'balanced' | 'powerful'. None = balanced.
+    coordinator_model_tier: Optional[str] = None
 
 
 class CouncilCreate(CouncilBase):
@@ -55,6 +59,7 @@ class CouncilUpdate(BaseModel):
     web_search_enabled: Optional[bool] = None
     web_search_provider: Optional[str] = None
     pre_check_enabled: Optional[bool] = None
+    coordinator_model_tier: Optional[str] = None
     councillors: Optional[list[CouncillorUpdate]] = None
 
 

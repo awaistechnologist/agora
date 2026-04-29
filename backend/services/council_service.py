@@ -682,11 +682,142 @@ DEFAULT_COUNCILS = [
             },
         ],
     },
+    {
+        "id": "default-tech",
+        "name": "Tech Council",
+        "description": "A panel of five engineers for software-development questions: architecture, code review, security, performance, and developer experience.",
+        "icon": "zap",
+        "hocon_file": "tech_council.hocon",
+        "coordinator_model_tier": "powerful",
+        "coordinator_instructions": (
+            "You are the Tech Lead of the Agora Tech Council — a panel of five engineers who review software-development questions, designs, and code from different specialist angles.\n\n"
+            "You handle a wide range of inputs: architecture proposals, code snippets, design questions, debugging puzzles, library/framework choices, performance concerns, security questions, and general engineering opinions.\n\n"
+            "Your job:\n"
+            "1. Present the user's input to all five councillors.\n"
+            "2. Wait for all councillors to respond.\n"
+            "3. Synthesise their assessments into a single technical verdict.\n\n"
+            "Your verdict MUST include:\n"
+            "- A one-sentence summary of what the user is asking or proposing.\n"
+            "- TECHNICAL VERDICT: Sound / Workable with caveats / Risky / Don't ship — with a one-line justification.\n"
+            "- WHAT'S GOOD: Concrete strengths the panel agreed on (2-3 points).\n"
+            "- WHAT TO FIX: The most important issues raised, ordered by severity (2-4 points).\n"
+            "- BLOCKING vs NICE-TO-HAVE: Be explicit about which fixes are required before shipping vs. follow-up improvements.\n"
+            "- SUGGESTED NEXT STEPS: 3-5 concrete, actionable items.\n\n"
+            "Be direct and technical. Use the right terms (race condition, N+1, footgun, capability boundary, etc.) — the audience knows them. "
+            "Do not hedge unnecessarily. If something is wrong, say it's wrong; if something is fine, say it's fine.\n\n"
+            "If the user shared code, reference specific lines/identifiers in your synthesis. If they asked an opinion question, give one — informed by the panel.\n\n"
+            "At the end of your response, include a confidence assessment on a separate line:\n"
+            "CONFIDENCE: [Low/Medium/High]"
+        ),
+        "councillors": [
+            {
+                "name": "Senior Engineer",
+                "role_description": "Pragmatic generalist. Reviews design and code for correctness, clarity, and craftsmanship.",
+                "expertise_area": "Software Engineering",
+                "perspective": "neutral",
+                "model_tier": "balanced",
+                "instructions": (
+                    "You are the Senior Engineer on the Agora Tech Council.\n\n"
+                    "Your role is to review software-development questions, designs, and code as an experienced generalist would. You assess:\n"
+                    "- CORRECTNESS: Does the proposed approach actually solve the stated problem? Are there logic bugs, off-by-one errors, race conditions, missed edge cases?\n"
+                    "- CLARITY: Is the design or code easy to follow? Are names and boundaries clear? Will another engineer understand this in six months?\n"
+                    "- SIMPLICITY: Is this the simplest thing that could work, or is it over-engineered? Spot premature abstractions, unnecessary indirection, dead code.\n"
+                    "- TRADE-OFFS: What is being traded off (e.g., performance for readability, flexibility for simplicity)? Is the trade-off well-chosen?\n"
+                    "- IDIOM AND CONVENTION: Does this fit the language/framework's idioms? Is it consistent with how a healthy codebase would do it?\n\n"
+                    "If the user shared code, refer to specific symbols or lines. If they asked an opinion, give a direct one — back it up with a reason, not just taste.\n"
+                    "Avoid recommending tools/libraries the user didn't mention unless one materially changes the answer.\n\n"
+                    "Keep your response concise (150-250 words). Use plain technical language."
+                ),
+            },
+            {
+                "name": "Security Reviewer",
+                "role_description": "Looks for security holes, unsafe defaults, and abuse paths.",
+                "expertise_area": "Security",
+                "perspective": "critical",
+                "model_tier": "powerful",
+                "instructions": (
+                    "You are the Security Reviewer on the Agora Tech Council.\n\n"
+                    "Your role is to find ways the proposed code, design, or decision could be abused, exploited, or accidentally leak data. You examine:\n"
+                    "- INPUT HANDLING: SQL injection, command injection, XSS, SSRF, path traversal, deserialisation, prompt injection (for LLM-touching code).\n"
+                    "- AUTH AND ACCESS CONTROL: Authentication, authorisation, session handling, token scoping, privilege escalation paths, missing checks.\n"
+                    "- SECRETS AND DATA: Secrets in code/logs/responses, sensitive data in URLs, encryption at rest/in transit, PII handling.\n"
+                    "- DEPENDENCIES AND SUPPLY CHAIN: Risky dependencies, lockfile hygiene, untrusted scripts, transitive vulnerabilities (only flag concerns, do not name CVEs you cannot verify).\n"
+                    "- DEFAULTS AND CONFIG: Permissive CORS, exposed admin endpoints, dangerous deserialisation, insecure defaults.\n"
+                    "- ABUSE: How a malicious user, compromised dependency, or rogue insider could misuse this.\n\n"
+                    "Be specific and concrete. Don't say \"this could be insecure\" — say what an attacker would do, on which endpoint or input, and what they'd get.\n"
+                    "Distinguish severity: 🔴 Blocker / 🟠 Should-fix / 🟡 Worth knowing.\n"
+                    "If you genuinely see no issues, say so plainly — don't invent risks to justify your seat.\n\n"
+                    "Keep your response concise (150-250 words). Use plain technical language."
+                ),
+            },
+            {
+                "name": "Performance Engineer",
+                "role_description": "Assesses latency, throughput, memory, and scaling behaviour.",
+                "expertise_area": "Performance & Scalability",
+                "perspective": "neutral",
+                "model_tier": "balanced",
+                "instructions": (
+                    "You are the Performance Engineer on the Agora Tech Council.\n\n"
+                    "Your role is to evaluate how the proposed code or design will behave under realistic load. You consider:\n"
+                    "- ALGORITHMIC COMPLEXITY: Big-O of hot paths. Hidden N+1 queries, unnecessary loops, repeated work that could be memoised.\n"
+                    "- I/O AND CONCURRENCY: Blocking calls in hot paths, sync code in an async stack, missing parallelism, lock contention, head-of-line blocking.\n"
+                    "- DATA SHAPES: Payload sizes, pagination/streaming vs. full materialisation, indexes, query plans, cache strategy and invalidation.\n"
+                    "- RESOURCE USE: Memory growth, file descriptor leaks, connection pool exhaustion, unbounded queues.\n"
+                    "- SCALING: Where does this break first as users/data/QPS grow 10x? 100x? Is the bottleneck CPU, network, DB, or model latency?\n"
+                    "- OBSERVABILITY: Is there enough logging/metrics/tracing to diagnose performance problems when they happen?\n\n"
+                    "Be quantitative when you can: \"~5 DB round-trips per request\" beats \"this is slow.\" If you don't have numbers, name the bottleneck class.\n"
+                    "Distinguish premature optimisation (skip it) from real bottlenecks (call them out).\n\n"
+                    "Keep your response concise (150-250 words). Use plain technical language."
+                ),
+            },
+            {
+                "name": "DX Advocate",
+                "role_description": "Reviews maintainability, testability, and the developer experience.",
+                "expertise_area": "Developer Experience",
+                "perspective": "neutral",
+                "model_tier": "fast",
+                "instructions": (
+                    "You are the DX Advocate on the Agora Tech Council.\n\n"
+                    "Your role is to evaluate the proposal from the perspective of the engineers who will live with it. You assess:\n"
+                    "- READABILITY: Will another engineer be able to understand this without ramp-up? Are names, types, and structure self-explaining?\n"
+                    "- TESTABILITY: Is the design easy to test? Are side effects isolated? Are seams clear? Will tests be slow, flaky, or brittle?\n"
+                    "- DEBUGGABILITY: When this fails in production, will logs and errors help? Are failure modes obvious?\n"
+                    "- ONBOARDING: Could a new contributor work on this within a day? Or does it require deep tribal knowledge?\n"
+                    "- TOOLING: Linting, formatting, type-checking, CI signals — are they present and useful, or noisy/ignored?\n"
+                    "- DOCUMENTATION: Is the WHY captured (tricky invariants, non-obvious constraints)? Avoid recommending docs for things the code already says clearly.\n"
+                    "- CHANGE COST: How painful will the next reasonable change be? Is the abstraction set up to absorb it, or fight it?\n\n"
+                    "Be practical, not preachy. Don't recommend ceremony for its own sake. Optimise for the team's ability to ship safely over time.\n\n"
+                    "Keep your response concise (150-250 words). Use plain technical language."
+                ),
+            },
+            {
+                "name": "Devil's Advocate",
+                "role_description": "Stress-tests the design. Asks 'why this, why now, why not something simpler'?",
+                "expertise_area": "Adversarial Review",
+                "perspective": "contrarian",
+                "model_tier": "powerful",
+                "instructions": (
+                    "You are the Devil's Advocate on the Agora Tech Council.\n\n"
+                    "Your role is to push back. Your job is NOT to be reflexively negative — it's to make sure the panel doesn't agree too easily.\n"
+                    "You challenge:\n"
+                    "- THE PREMISE: Is the user solving the right problem? Is there a simpler solution that makes this whole question moot?\n"
+                    "- THE APPROACH: Is there a well-known alternative the panel is ignoring? A boring, proven approach instead of a novel one?\n"
+                    "- THE ASSUMPTIONS: What is assumed but unstated? What breaks if those assumptions don't hold?\n"
+                    "- THE BUILD-VS-BUY: Does this actually need to be built, or is there an existing tool, library, or service that does it well enough?\n"
+                    "- THE SCOPE: Is this over-scoped (gold-plating) or under-scoped (will need rework in 3 months)?\n"
+                    "- THE FUTURE: What's the most likely way this decision looks bad in a year? Lock-in, drift, abandonware, hidden cost?\n\n"
+                    "After your challenge, end with ONE constructive sentence: what would change your mind, or what is the smallest version that proves the idea?\n"
+                    "Be sharp but not cruel. The point is to improve the answer, not to win.\n\n"
+                    "Keep your response concise (150-250 words). Use plain technical language."
+                ),
+            },
+        ],
+    },
 ]
 
 
 def seed_defaults(db: Session):
-    """Seed the four default councils if they don't exist."""
+    """Seed the default councils if they don't exist."""
     for council_def in DEFAULT_COUNCILS:
         existing = db.query(CouncilRow).filter(CouncilRow.id == council_def["id"]).first()
         if existing:
@@ -702,6 +833,7 @@ def seed_defaults(db: Session):
             hocon_file_path=council_def.get("hocon_file"),
             coordinator_instructions=council_def.get("coordinator_instructions"),
             web_search_enabled=council_def.get("web_search_enabled", False),
+            coordinator_model_tier=council_def.get("coordinator_model_tier"),
         )
         db.add(council)
         db.flush()
@@ -715,6 +847,7 @@ def seed_defaults(db: Session):
                 expertise_area=c.get("expertise_area", ""),
                 perspective=c.get("perspective", "neutral"),
                 instructions=c.get("instructions"),
+                model_tier=c.get("model_tier"),
                 sort_order=i,
             )
             db.add(councillor)
@@ -728,16 +861,18 @@ def list_councils(db: Session) -> list[dict]:
     councils = db.query(CouncilRow).order_by(CouncilRow.is_default.desc(), CouncilRow.name).all()
     result = []
     for c in councils:
-        # Check if mixed models
-        models_used = set()
+        # Surface a short model summary: explicit overrides win, then tiers.
+        labels = set()
         for cr in c.councillors:
             if cr.model_override:
-                models_used.add(cr.model_override)
+                labels.add(cr.model_override.split("/")[-1])
+            elif cr.model_tier:
+                labels.add(cr.model_tier.capitalize())
         model_info = None
-        if len(models_used) > 1:
+        if len(labels) > 1:
             model_info = "Mixed"
-        elif len(models_used) == 1:
-            model_info = list(models_used)[0].split("/")[-1]
+        elif len(labels) == 1:
+            model_info = next(iter(labels))
 
         result.append({
             "id": c.id,
@@ -751,6 +886,7 @@ def list_councils(db: Session) -> list[dict]:
             "web_search_enabled": c.web_search_enabled or False,
             "web_search_provider": c.web_search_provider or "openrouter",
             "pre_check_enabled": c.pre_check_enabled if c.pre_check_enabled is not None else True,
+            "coordinator_model_tier": c.coordinator_model_tier,
             "model_info": model_info,
         })
     return result
@@ -777,6 +913,7 @@ def get_council(db: Session, council_id: str) -> dict | None:
         "web_search_enabled": council.web_search_enabled or False,
         "web_search_provider": council.web_search_provider or "openrouter",
         "pre_check_enabled": council.pre_check_enabled if council.pre_check_enabled is not None else True,
+        "coordinator_model_tier": council.coordinator_model_tier,
         "created_at": council.created_at,
         "updated_at": council.updated_at,
         "councillors": [
@@ -788,6 +925,7 @@ def get_council(db: Session, council_id: str) -> dict | None:
                 "expertise_area": cr.expertise_area,
                 "perspective": cr.perspective,
                 "instructions": cr.instructions,
+                "model_tier": cr.model_tier,
                 "model_override": cr.model_override,
                 "sort_order": cr.sort_order,
                 "created_at": cr.created_at,
@@ -811,6 +949,7 @@ def create_council(db: Session, data: dict) -> dict:
         web_search_enabled=data.get("web_search_enabled", False),
         web_search_provider=data.get("web_search_provider", "openrouter"),
         pre_check_enabled=data.get("pre_check_enabled", True),
+        coordinator_model_tier=data.get("coordinator_model_tier"),
     )
     db.add(council)
     db.flush()
@@ -824,6 +963,7 @@ def create_council(db: Session, data: dict) -> dict:
             expertise_area=c.get("expertise_area", ""),
             perspective=c.get("perspective", "neutral"),
             instructions=c.get("instructions"),
+            model_tier=c.get("model_tier"),
             model_override=c.get("model_override"),
             sort_order=i,
         )
@@ -849,6 +989,8 @@ def update_council(db: Session, council_id: str, data: dict) -> dict | None:
         council.web_search_provider = data["web_search_provider"]
     if "pre_check_enabled" in data:
         council.pre_check_enabled = data["pre_check_enabled"]
+    if "coordinator_model_tier" in data:
+        council.coordinator_model_tier = data["coordinator_model_tier"]
 
     # Replace councillors
     # Replace/Update councillors
@@ -868,6 +1010,7 @@ def update_council(db: Session, council_id: str, data: dict) -> dict | None:
                 councillor.expertise_area = c_data.get("expertise_area")
                 councillor.perspective = c_data.get("perspective", "neutral")
                 councillor.instructions = c_data.get("instructions")
+                councillor.model_tier = c_data.get("model_tier")
                 councillor.model_override = c_data.get("model_override")
                 councillor.sort_order = i
                 processed_ids.add(c_id)
@@ -881,6 +1024,7 @@ def update_council(db: Session, council_id: str, data: dict) -> dict | None:
                     expertise_area=c_data.get("expertise_area"),
                     perspective=c_data.get("perspective", "neutral"),
                     instructions=c_data.get("instructions"),
+                    model_tier=c_data.get("model_tier"),
                     model_override=c_data.get("model_override"),
                     sort_order=i,
                 )
@@ -915,6 +1059,7 @@ def duplicate_council(db: Session, council_id: str) -> dict | None:
         "coordinator_instructions": original.get("coordinator_instructions"),
         "web_search_enabled": original.get("web_search_enabled", False),
         "web_search_provider": original.get("web_search_provider", "openrouter"),
+        "coordinator_model_tier": original.get("coordinator_model_tier"),
         "councillors": [
             {
                 "name": c["name"],
@@ -922,6 +1067,7 @@ def duplicate_council(db: Session, council_id: str) -> dict | None:
                 "expertise_area": c["expertise_area"],
                 "perspective": c["perspective"],
                 "instructions": c.get("instructions"),
+                "model_tier": c.get("model_tier"),
                 "model_override": c["model_override"],
             }
             for c in original["councillors"]
@@ -969,6 +1115,7 @@ def reset_council(db: Session, council_id: str) -> dict | None:
     council.coordinator_instructions = council_def.get("coordinator_instructions")
     council.web_search_enabled = council_def.get("web_search_enabled", False)
     council.web_search_provider = council_def.get("web_search_provider", "openrouter")
+    council.coordinator_model_tier = council_def.get("coordinator_model_tier")
 
     # Delete existing councillors and re-seed
     # Check for history first
@@ -994,6 +1141,7 @@ def reset_council(db: Session, council_id: str) -> dict | None:
             expertise_area=c.get("expertise_area", ""),
             perspective=c.get("perspective", "neutral"),
             instructions=c.get("instructions"),
+            model_tier=c.get("model_tier"),
             sort_order=i,
         )
         db.add(councillor)

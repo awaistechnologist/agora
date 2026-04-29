@@ -18,6 +18,8 @@ from typing import AsyncGenerator, Optional
 logger = logging.getLogger("agora.engine")
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_PREFIX = "ollama/"
 
 
 @dataclass
@@ -69,9 +71,21 @@ class AgoraEngine:
         }
 
     def _call_llm(self, model: str, system_prompt: str, user_message: str, max_tokens: int = 1000) -> tuple[str, UsageData]:
-        """Make a synchronous LLM call to OpenRouter."""
+        """Make a synchronous LLM call. Routes to Ollama for `ollama/*` model ids
+        and to OpenRouter for everything else. The wire format is identical
+        (OpenAI-compatible chat completions); only the base URL + auth differ."""
+        is_ollama = model.startswith(OLLAMA_PREFIX)
+        if is_ollama:
+            url = f"{OLLAMA_HOST}/v1/chat/completions"
+            wire_model = model[len(OLLAMA_PREFIX):]
+            headers = {"Content-Type": "application/json"}
+        else:
+            url = OPENROUTER_CHAT_URL
+            wire_model = model
+            headers = self._get_headers()
+
         payload = {
-            "model": model,
+            "model": wire_model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
@@ -81,27 +95,24 @@ class AgoraEngine:
         }
 
         try:
-            resp = httpx.post(
-                OPENROUTER_CHAT_URL,
-                json=payload,
-                headers=self._get_headers(),
-                timeout=180.0,
-            )
+            resp = httpx.post(url, json=payload, headers=headers, timeout=300.0)
             resp.raise_for_status()
             data = resp.json()
 
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             usage_raw = data.get("usage", {})
+            # Ollama doesn't bill, so cost is always 0 for local calls.
+            cost = 0.0 if is_ollama else (usage_raw.get("cost") or 0.0)
             usage = UsageData(
                 prompt_tokens=usage_raw.get("prompt_tokens", 0),
                 completion_tokens=usage_raw.get("completion_tokens", 0),
                 total_tokens=usage_raw.get("total_tokens", 0),
-                cost=usage_raw.get("cost", 0.0) if usage_raw.get("cost") else 0.0,
+                cost=cost,
             )
             return content, usage
 
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
+            logger.error(f"LLM call failed ({'ollama' if is_ollama else 'openrouter'}, model={wire_model}): {e}")
             raise
 
     def _infer_stance(self, perspective: str, response_text: str) -> str:
@@ -155,28 +166,49 @@ class AgoraEngine:
         statement: str,
         councillors: list[dict],
         council_name: str,
-        default_model: str = "openai/gpt-4o",
+        default_models: dict | str = "openai/gpt-4o",
         coordinator_instructions: str = "",
         web_search_enabled: bool = False,
         web_search_provider: str = "openrouter",
         bypass_pre_check: bool = False,
         pre_check_enabled: bool = True,
+        coordinator_model_tier: str | None = None,
     ):
         """
         Run a full deliberation synchronously, yielding events.
-        Returns a generator of SessionEvent objects.
+
+        `default_models` is a dict {"fast": str, "balanced": str, "powerful": str}.
+        A bare string is also accepted for backward compatibility — it becomes
+        the value for all three tiers.
+        Returns a list of SessionEvent objects.
         """
+        # Normalise default_models into a tier dict
+        if isinstance(default_models, str):
+            tier_models = {"fast": default_models, "balanced": default_models, "powerful": default_models}
+        else:
+            balanced = default_models.get("balanced") or "openai/gpt-4o"
+            tier_models = {
+                "fast": default_models.get("fast") or balanced,
+                "balanced": balanced,
+                "powerful": default_models.get("powerful") or balanced,
+            }
+
+        def resolve_tier(tier: str | None) -> str:
+            return tier_models.get(tier or "balanced", tier_models["balanced"])
+
+        # Legacy alias for any code below that still references default_model
+        default_model = tier_models["balanced"]
+
         events = []
         all_responses = []
         total_usage = UsageData()
-        
+
         current_date = datetime.now().strftime("%Y-%m-%d")
 
         # ─── Pre-Check (Phase 2) ───
         if pre_check_enabled and not bypass_pre_check:
-            # Use default model or a cheap fast model if available
-            # For now, use default_model to be safe
-            pre_check_model = default_model
+            # Pre-check is a cheap clarity scan — run it on the Fast tier.
+            pre_check_model = tier_models["fast"]
             
             pre_check_data = self._run_pre_check(statement, council_name, pre_check_model)
             result = pre_check_data["result"]
@@ -233,10 +265,11 @@ class AgoraEngine:
                 data={"councillor_id": c["id"], "councillor_name": c["name"]}
             ))
 
-            model = c.get("model_override") or default_model
-            
-            # Apply :online suffix if provider is 'openrouter'
-            if web_search_enabled and use_online_model_suffix:
+            # Precedence: explicit model_override > tier-resolved model > balanced default
+            model = c.get("model_override") or resolve_tier(c.get("model_tier"))
+
+            # Apply :online suffix only for OpenRouter models — Ollama has no online routing.
+            if web_search_enabled and use_online_model_suffix and not model.startswith(OLLAMA_PREFIX):
                 if not model.endswith(":online") and not model.endswith(":free"):
                     model = model + ":online"
 
@@ -337,10 +370,10 @@ class AgoraEngine:
         synthesis_message += "Please synthesise these perspectives into a clear, balanced verdict."
 
         try:
-            coordinator_model = default_model
-            
-            # Apply :online suffix if provider is 'openrouter'
-            if web_search_enabled and use_online_model_suffix:
+            coordinator_model = resolve_tier(coordinator_model_tier)
+
+            # Apply :online suffix only for OpenRouter models — Ollama has no online routing.
+            if web_search_enabled and use_online_model_suffix and not coordinator_model.startswith(OLLAMA_PREFIX):
                 if not coordinator_model.endswith(":online") and not coordinator_model.endswith(":free"):
                     coordinator_model = coordinator_model + ":online"
 

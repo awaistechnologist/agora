@@ -22,6 +22,8 @@ from backend.api import settings as settings_api
 from backend.api import models as models_api
 from backend.api import councils as councils_api
 from backend.api import chamber as chamber_api
+from backend.api import mcp as mcp_api
+from backend.api import ollama as ollama_api
 
 # ─── Logging ───────────────────────────────────────────────────────────────
 log_level = os.getenv("AGORA_LOG_LEVEL", "INFO").upper()
@@ -64,7 +66,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Agora",
     description="Many voices. Better decisions.",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -84,6 +86,8 @@ app.include_router(settings_api.router)
 app.include_router(models_api.router)
 app.include_router(councils_api.router)
 app.include_router(chamber_api.router)
+app.include_router(mcp_api.router)
+app.include_router(ollama_api.router)
 
 
 # ─── Health ────────────────────────────────────────────────────────────────
@@ -92,13 +96,28 @@ def health():
     from engine.interface import AgoraEngine
     return {
         "status": "ok",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "engine_version": AgoraEngine.get_engine_version(),
     }
 
 
 # ─── Static files (frontend) ──────────────────────────────────────────────
 FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
+# index.html is the SPA shell; it points at a content-hashed JS bundle in
+# /assets. We must NOT let the browser cache index.html, otherwise a new build
+# (with a new bundle hash) won't be picked up on plain navigation — the user
+# would have to hard-refresh every time. Hashed bundles in /assets are safe
+# to cache long-term because their filenames change when the code changes.
+#
+# `no-store` is stronger than `no-cache` and is the only directive that
+# reliably invalidates the browser's in-memory back/forward cache (bfcache).
+# `Pragma`/`Expires` cover legacy proxies for completeness.
+_INDEX_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 if os.path.isdir(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 
@@ -107,5 +126,9 @@ if os.path.isdir(FRONTEND_DIST):
         """Serve the React SPA — all non-API routes go to index.html."""
         file_path = os.path.join(FRONTEND_DIST, full_path)
         if os.path.isfile(file_path):
+            # If the user requests a real file at the root (e.g. favicon),
+            # serve it; otherwise fall through to index.html below.
+            if full_path == "index.html":
+                return FileResponse(file_path, headers=_INDEX_HEADERS)
             return FileResponse(file_path)
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"), headers=_INDEX_HEADERS)

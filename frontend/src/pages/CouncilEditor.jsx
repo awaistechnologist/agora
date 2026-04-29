@@ -10,6 +10,14 @@ const PERSPECTIVES = [
     { value: 'contrarian', label: 'Contrarian', color: '#E5484D' },
 ]
 
+// Maps to the three slots in Settings → Default Models.
+// Stored values stay 'fast' / 'balanced' / 'powerful' under the hood.
+const TIER_OPTIONS = [
+    { value: 'fast', label: 'Default 1 (from Settings)' },
+    { value: 'balanced', label: 'Default 2 (from Settings)' },
+    { value: 'powerful', label: 'Default 3 (from Settings)' },
+]
+
 const ICONS = ['users', 'lightbulb', 'heart', 'activity', 'brain', 'shield', 'star', 'target', 'compass', 'zap']
 
 export default function CouncilEditor() {
@@ -24,9 +32,10 @@ export default function CouncilEditor() {
     const [webSearchEnabled, setWebSearchEnabled] = useState(false)
     const [webSearchProvider, setWebSearchProvider] = useState('openrouter')
     const [preCheckEnabled, setPreCheckEnabled] = useState(true)
+    const [coordinatorModelTier, setCoordinatorModelTier] = useState('')
     const [councillors, setCouncillors] = useState([
-        { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: true },
-        { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: false },
+        { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_tier: null, model_override: null, expanded: true },
+        { name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_tier: null, model_override: null, expanded: false },
     ])
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -51,6 +60,7 @@ export default function CouncilEditor() {
                     setWebSearchEnabled(data.web_search_enabled || false)
                     setWebSearchProvider(data.web_search_provider || 'openrouter')
                     setPreCheckEnabled(data.pre_check_enabled !== undefined ? data.pre_check_enabled : true)
+                    setCoordinatorModelTier(data.coordinator_model_tier || '')
                     setIsDefault(data.is_default || false)
                     setCouncillors(data.councillors.map(c => ({ ...c, expanded: false })))
                 })
@@ -63,7 +73,7 @@ export default function CouncilEditor() {
         setCouncillors([
             ...councillors.map(c => ({ ...c, expanded: false })),
             {
-                name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_override: null, expanded: true,
+                name: '', role_description: '', expertise_area: '', perspective: 'neutral', instructions: '', model_tier: null, model_override: null, expanded: true,
             }])
     }
 
@@ -101,6 +111,7 @@ export default function CouncilEditor() {
             web_search_enabled: webSearchEnabled,
             web_search_provider: webSearchProvider,
             pre_check_enabled: preCheckEnabled,
+            coordinator_model_tier: coordinatorModelTier || null,
             councillors: validCouncillors.map(c => ({
                 id: c.id,
                 name: c.name.trim(),
@@ -108,6 +119,7 @@ export default function CouncilEditor() {
                 expertise_area: c.expertise_area?.trim() || '',
                 perspective: c.perspective,
                 instructions: c.instructions?.trim() || null,
+                model_tier: c.model_tier || null,
                 model_override: c.model_override || null,
             })),
         }
@@ -336,6 +348,23 @@ export default function CouncilEditor() {
                             className="input"
                             style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, minHeight: '80px' }}
                         />
+
+                        <div style={{ marginTop: '14px' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '5px' }}>Coordinator Model</label>
+                            <select
+                                value={coordinatorModelTier || 'balanced'}
+                                onChange={e => setCoordinatorModelTier(e.target.value)}
+                                className="input"
+                                style={{ cursor: 'pointer' }}
+                            >
+                                {TIER_OPTIONS.map(t => (
+                                    <option key={t.value} value={t.value}>{t.label}</option>
+                                ))}
+                            </select>
+                            <span style={{ display: 'block', fontSize: '11px', marginTop: '3px', color: 'var(--color-text-muted)' }}>
+                                Which of your three default models (set in Settings → Default Models) to use for the final synthesis.
+                            </span>
+                        </div>
                     </div>
 
                     {/* Councillors */}
@@ -443,15 +472,33 @@ export default function CouncilEditor() {
 
                                             <div>
                                                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '5px' }}>Model</label>
-                                                <ModelPicker
-                                                    models={models}
-                                                    value={c.model_override}
-                                                    onChange={val => updateCouncillor(idx, 'model_override', val)}
-                                                />
+                                                <select
+                                                    value={c.model_tier || 'balanced'}
+                                                    onChange={e => updateCouncillor(idx, 'model_tier', e.target.value)}
+                                                    className="input"
+                                                    style={{ cursor: 'pointer' }}
+                                                    disabled={!!c.model_override}
+                                                >
+                                                    {TIER_OPTIONS.map(t => (
+                                                        <option key={t.value} value={t.value}>{t.label}</option>
+                                                    ))}
+                                                </select>
                                                 <span style={{ display: 'block', fontSize: '11px', marginTop: '3px', color: 'var(--color-text-muted)' }}>
-                                                    {c.model_override ? 'Custom model' : 'Inherits from Settings'}
+                                                    {c.model_override ? 'Disabled — explicit model is set below' : 'Which of your three default models (set in Settings) this councillor uses.'}
                                                 </span>
                                             </div>
+                                        </div>
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '5px' }}>Explicit Model Override (advanced)</label>
+                                            <ModelPicker
+                                                models={models}
+                                                value={c.model_override}
+                                                onChange={val => updateCouncillor(idx, 'model_override', val)}
+                                            />
+                                            <span style={{ display: 'block', fontSize: '11px', marginTop: '3px', color: 'var(--color-text-muted)' }}>
+                                                {c.model_override ? 'Pinned to a specific model — overrides the tier above.' : 'Optional. Leave blank to use the tier above.'}
+                                            </span>
                                         </div>
 
                                         {councillors.length > 2 && (
@@ -525,6 +572,8 @@ export default function CouncilEditor() {
                                             setName(data.name)
                                             setDescription(data.description)
                                             setIcon(data.icon)
+                                            setCoordinatorInstructions(data.coordinator_instructions || '')
+                                            setCoordinatorModelTier(data.coordinator_model_tier || '')
                                             setCouncillors(data.councillors.map(c => ({ ...c, expanded: false })))
                                             setError('')
                                         } else {

@@ -46,7 +46,12 @@ class SettingsRow(Base):
     __tablename__ = "settings"
     id = Column(Integer, primary_key=True, default=1)
     openrouter_key_encrypted = Column(Text, nullable=True)
+    # `default_model` is the Balanced tier (kept under the legacy column name
+    # so old code paths keep working). `default_model_fast` and
+    # `default_model_powerful` are the two additional tier slots.
     default_model = Column(Text, default="openai/gpt-4o")
+    default_model_fast = Column(Text, nullable=True)
+    default_model_powerful = Column(Text, nullable=True)
     created_at = Column(Text, server_default="CURRENT_TIMESTAMP")
     updated_at = Column(Text, server_default="CURRENT_TIMESTAMP")
 
@@ -67,6 +72,9 @@ class CouncilRow(Base):
     updated_at = Column(Text, server_default="CURRENT_TIMESTAMP")
     web_search_provider = Column(Text, default="openrouter")
     pre_check_enabled = Column(Boolean, default=True)
+    # Tier the coordinator (final synthesis) runs at: 'fast' | 'balanced' | 'powerful'.
+    # NULL = balanced.
+    coordinator_model_tier = Column(Text, nullable=True)
     councillors = relationship("CouncillorRow", back_populates="council", cascade="all, delete-orphan")
 
 
@@ -79,6 +87,9 @@ class CouncillorRow(Base):
     expertise_area = Column(Text, nullable=True)
     perspective = Column(Text, default="neutral")
     instructions = Column(Text, nullable=True)
+    # Tier this councillor runs at: 'fast' | 'balanced' | 'powerful'. NULL = balanced.
+    # `model_override` is an explicit model id and takes precedence over the tier.
+    model_tier = Column(Text, nullable=True)
     model_override = Column(Text, nullable=True)
     sort_order = Column(Integer, default=0)
     created_at = Column(Text, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))

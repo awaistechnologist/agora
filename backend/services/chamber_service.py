@@ -29,14 +29,21 @@ def submit_statement(db: Session, council_id: str, statement: str, bypass_pre_ch
     if not council.is_active:
         return [{"type": "error", "data": {"message": "This council is currently inactive."}}]
 
-    # Get API key
-    api_key = settings_service.get_api_key(db)
-    if not api_key:
-        return [{"type": "error", "data": {"message": "Please add your OpenRouter API key in Settings before running a deliberation."}}]
+    # Get the three tier models (Fast / Balanced / Powerful)
+    tier_models = settings_service.get_models_by_tier(db)
 
-    # Get default model
-    settings_row = settings_service._ensure_settings(db)
-    default_model = settings_row.default_model or "openai/gpt-4o"
+    # An OpenRouter API key is only required if this deliberation will hit
+    # OpenRouter at all. If every model that could be used (the three slots
+    # plus any per-councillor explicit override) is an `ollama/*` id, we can
+    # run entirely locally without a key.
+    needs_openrouter = any(not (m or "").startswith("ollama/") for m in tier_models.values())
+    if not needs_openrouter:
+        # Check councillor-specific overrides too
+        overrides = [c.model_override for c in db.query(CouncillorRow).filter(CouncillorRow.council_id == council_id).all()]
+        needs_openrouter = any(o and not o.startswith("ollama/") for o in overrides)
+    api_key = settings_service.get_api_key(db) if needs_openrouter else None
+    if needs_openrouter and not api_key:
+        return [{"type": "error", "data": {"message": "Please add your OpenRouter API key in Settings before running a deliberation. (Or assign Ollama models to all three tiers to run fully local.)"}}]
 
     # Create session
     session_id = str(uuid.uuid4())
@@ -64,6 +71,7 @@ def submit_statement(db: Session, council_id: str, statement: str, bypass_pre_ch
             "expertise_area": c.expertise_area or "",
             "perspective": c.perspective or "neutral",
             "instructions": c.instructions,
+            "model_tier": c.model_tier,
             "model_override": c.model_override,
         }
         for c in councillors
@@ -71,7 +79,8 @@ def submit_statement(db: Session, council_id: str, statement: str, bypass_pre_ch
 
     # Run engine
     start_time = time.time()
-    os.environ["OPENROUTER_API_KEY"] = api_key
+    if api_key:
+        os.environ["OPENROUTER_API_KEY"] = api_key
     engine = AgoraEngine()
 
     try:
@@ -79,13 +88,14 @@ def submit_statement(db: Session, council_id: str, statement: str, bypass_pre_ch
             statement=statement,
             councillors=councillor_data,
             council_name=council.name,
-            default_model=default_model,
+            default_models=tier_models,
             coordinator_instructions=council.coordinator_instructions or "",
 
             web_search_enabled=council.web_search_enabled or False,
             web_search_provider=council.web_search_provider or "openrouter",
             bypass_pre_check=bypass_pre_check,
             pre_check_enabled=council.pre_check_enabled if council.pre_check_enabled is not None else True,
+            coordinator_model_tier=council.coordinator_model_tier,
         )
     except Exception as e:
         session.status = "error"

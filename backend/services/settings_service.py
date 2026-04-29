@@ -14,6 +14,8 @@ logger = logging.getLogger("agora.settings")
 # Derive a machine-stable encryption key from a fixed seed file
 _KEY_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", ".agora_key")
 
+_FALLBACK_MODEL = "openai/gpt-4o"
+
 
 def _get_fernet() -> Fernet:
     """Get or create a Fernet key for encrypting the API key at rest."""
@@ -39,6 +41,17 @@ def _ensure_settings(db: Session) -> SettingsRow:
     return row
 
 
+def get_models_by_tier(db: Session) -> dict:
+    """Return the three default models keyed by tier name."""
+    row = _ensure_settings(db)
+    balanced = row.default_model or _FALLBACK_MODEL
+    return {
+        "fast": row.default_model_fast or balanced,
+        "balanced": balanced,
+        "powerful": row.default_model_powerful or balanced,
+    }
+
+
 def get_settings(db: Session) -> dict:
     """Return settings with masked key."""
     row = _ensure_settings(db)
@@ -56,16 +69,26 @@ def get_settings(db: Session) -> dict:
         if env_key:
             key_set = True
             key_preview = f"...{env_key[-4:]}"
+
+    balanced = row.default_model or _FALLBACK_MODEL
     return {
         "openrouter_key_set": key_set,
         "openrouter_key_preview": key_preview,
-        "default_model": row.default_model or "openai/gpt-4o",
+        "default_model_fast": row.default_model_fast or balanced,
+        "default_model_balanced": balanced,
+        "default_model_powerful": row.default_model_powerful or balanced,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
 
 
-def update_settings(db: Session, openrouter_key: str | None = None, default_model: str | None = None) -> dict:
+def update_settings(
+    db: Session,
+    openrouter_key: str | None = None,
+    default_model_fast: str | None = None,
+    default_model_balanced: str | None = None,
+    default_model_powerful: str | None = None,
+) -> dict:
     """Update settings. Encrypts the API key if provided."""
     row = _ensure_settings(db)
     if openrouter_key is not None:
@@ -73,8 +96,13 @@ def update_settings(db: Session, openrouter_key: str | None = None, default_mode
         row.openrouter_key_encrypted = encrypted
         # Also write to .env for the engine module
         _update_env_key(openrouter_key)
-    if default_model is not None:
-        row.default_model = default_model
+    if default_model_fast is not None:
+        row.default_model_fast = default_model_fast
+    if default_model_balanced is not None:
+        # Balanced is stored under the legacy `default_model` column
+        row.default_model = default_model_balanced
+    if default_model_powerful is not None:
+        row.default_model_powerful = default_model_powerful
     db.commit()
     db.refresh(row)
     return get_settings(db)

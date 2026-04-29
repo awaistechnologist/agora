@@ -38,6 +38,10 @@ frontend/dist/
 .gemini/
 .agent/
 
+# ===== Internal planning docs =====
+ROADMAP.md
+NOTES.md
+
 # ===== IDE =====
 .vscode/
 .idea/

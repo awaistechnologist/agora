@@ -300,9 +300,13 @@ export default function Chamber() {
                 {preCheckData && (
                     <PreCheckCard
                         data={preCheckData}
-                        onRevise={(addContext) => {
-                            setStatement(`${statement}\n\nAdditional Context: ${addContext}`)
-                            submit(`${statement}\n\nAdditional Context: ${addContext}`)
+                        onRevise={(clarifications) => {
+                            // PreCheckCard sends a fully-formed Q&A block that
+                            // includes the original questions, so the council
+                            // sees the full conversation, not just the answers.
+                            const next = `${statement}\n\n${clarifications}`
+                            setStatement(next)
+                            submit(next, true)
                         }}
                         onBypass={() => submit(null, true)}
                     />
