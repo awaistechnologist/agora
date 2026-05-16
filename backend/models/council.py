@@ -47,7 +47,10 @@ class CouncilBase(BaseModel):
 
 
 class CouncilCreate(CouncilBase):
-    pass
+    # Pydantic strips undeclared fields, so councillors + icon must be on the
+    # schema for POST /api/councils to actually receive them.
+    icon: Optional[str] = "users"
+    councillors: Optional[list[CouncillorCreate]] = None
 
 
 class CouncilUpdate(BaseModel):

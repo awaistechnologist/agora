@@ -151,6 +151,155 @@ def submit_statement(db: Session, council_id: str, statement: str, bypass_pre_ch
     return [{"type": e.type, "data": e.data} for e in events]
 
 
+async def submit_statement_streaming(
+    db: Session,
+    council_id: str,
+    statement: str,
+    bypass_pre_check: bool = False,
+    model_override: str | None = None,
+    force_web_search: bool = False,
+):
+    """Async generator. Streams events from the engine to the API layer (and
+    out to the user) as they happen, while persisting completed councillor
+    responses + the final verdict to the database. Mirrors the sync
+    `submit_statement` flow but emits events live."""
+    council = db.query(CouncilRow).filter(CouncilRow.id == council_id).first()
+    if not council:
+        yield {"type": "error", "data": {"message": "Council not found."}}
+        return
+    if not council.is_active:
+        yield {"type": "error", "data": {"message": "This council is currently inactive."}}
+        return
+
+    tier_models = settings_service.get_models_by_tier(db)
+
+    # If a model_override is provided (Auto-pick), it overrides every tier
+    # for this deliberation. We still leave per-councillor explicit overrides
+    # in place — those are the user's hard pin and win over Auto-pick.
+    if model_override:
+        tier_models = {"fast": model_override, "balanced": model_override, "powerful": model_override}
+
+    needs_openrouter = any(not (m or "").startswith("ollama/") for m in tier_models.values())
+    if not needs_openrouter:
+        overrides = [c.model_override for c in db.query(CouncillorRow).filter(CouncillorRow.council_id == council_id).all()]
+        needs_openrouter = any(o and not o.startswith("ollama/") for o in overrides)
+    api_key = settings_service.get_api_key(db) if needs_openrouter else None
+    if needs_openrouter and not api_key:
+        yield {"type": "error", "data": {"message": "Please add your OpenRouter API key in Settings before running a deliberation. (Or assign Ollama models to all three tiers to run fully local.)"}}
+        return
+
+    session_id = str(uuid.uuid4())
+    session = SessionRow(
+        id=session_id,
+        council_id=council_id,
+        statement=statement,
+        status="in_progress",
+    )
+    db.add(session)
+    db.commit()
+
+    councillors = (
+        db.query(CouncillorRow)
+        .filter(CouncillorRow.council_id == council_id)
+        .order_by(CouncillorRow.sort_order)
+        .all()
+    )
+    councillor_data = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "role_description": c.role_description,
+            "expertise_area": c.expertise_area or "",
+            "perspective": c.perspective or "neutral",
+            "instructions": c.instructions,
+            "model_tier": c.model_tier,
+            "model_override": c.model_override,
+        }
+        for c in councillors
+    ]
+
+    if api_key:
+        os.environ["OPENROUTER_API_KEY"] = api_key
+    engine = AgoraEngine()
+
+    start_time = time.time()
+    total_cost = 0.0
+    total_tokens = 0
+    model_summary = ""
+    sort_idx = 0
+    saw_error = False
+
+    try:
+        # Force-on always uses 'local' (DuckDuckGo) so it works with any
+        # model — the OpenRouter ':online' route is a no-op for Ollama, and
+        # this override exists precisely so Auto-pick can ensure web search
+        # actually happens for time-sensitive statements.
+        eff_web_search_enabled = True if force_web_search else (council.web_search_enabled or False)
+        eff_web_search_provider = "local" if force_web_search else (council.web_search_provider or "openrouter")
+
+        async for ev in engine.run_deliberation_streaming(
+            statement=statement,
+            councillors=councillor_data,
+            council_name=council.name,
+            default_models=tier_models,
+            coordinator_instructions=council.coordinator_instructions or "",
+            web_search_enabled=eff_web_search_enabled,
+            web_search_provider=eff_web_search_provider,
+            bypass_pre_check=bypass_pre_check,
+            pre_check_enabled=council.pre_check_enabled if council.pre_check_enabled is not None else True,
+            coordinator_model_tier=council.coordinator_model_tier,
+        ):
+            etype = ev.type
+            data = ev.data
+
+            if etype == "councillor_response" and not data.get("error"):
+                resp = ResponseRow(
+                    id=str(uuid.uuid4()),
+                    session_id=session_id,
+                    councillor_id=data["councillor_id"],
+                    response_text=data.get("response_text", ""),
+                    stance=data.get("stance", "mixed"),
+                    model_used=data.get("model_used", ""),
+                    prompt_tokens=data.get("prompt_tokens", 0),
+                    completion_tokens=data.get("completion_tokens", 0),
+                    total_tokens=data.get("total_tokens", 0),
+                    cost_usd=data.get("cost_usd", 0.0),
+                    sort_order=sort_idx,
+                )
+                sort_idx += 1
+                db.add(resp)
+                db.commit()
+            elif etype == "verdict":
+                session.verdict = data.get("verdict_text", "")
+                session.confidence = data.get("confidence", "medium")
+                total_cost = data.get("total_cost_usd", total_cost)
+                total_tokens = data.get("total_tokens", total_tokens)
+                model_summary = data.get("model_summary", "")
+                db.commit()
+            elif etype == "complete":
+                total_cost = data.get("total_cost_usd", total_cost)
+                total_tokens = data.get("total_tokens", total_tokens)
+            elif etype == "error":
+                saw_error = True
+
+            yield {"type": etype, "data": data}
+    except Exception as e:
+        logger.error(f"Streaming deliberation crashed: {e}")
+        session.status = "error"
+        db.commit()
+        yield {"type": "error", "data": {"message": f"Deliberation failed: {str(e)[:200]}"}}
+        return
+
+    duration = time.time() - start_time
+    session.status = "error" if saw_error and not session.verdict else "completed"
+    session.total_cost_usd = total_cost
+    session.total_tokens = total_tokens
+    session.duration_seconds = round(duration, 2)
+    session.model_summary = model_summary
+    session.completed_at = datetime.utcnow().isoformat()
+    db.commit()
+
+
 def get_sessions(db: Session, limit: int = 50) -> list[dict]:
     """List recent sessions."""
     sessions = (

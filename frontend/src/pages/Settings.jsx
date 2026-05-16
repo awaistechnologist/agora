@@ -924,7 +924,7 @@ export default function Settings() {
             <section className="card" style={{ padding: '28px' }}>
                 <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '14px' }}>About</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    <p><strong style={{ color: 'var(--color-text-primary)' }}>Agora</strong> v0.2.0</p>
+                    <p><strong style={{ color: 'var(--color-text-primary)' }}>Agora</strong> v0.3.0</p>
                     <p>
                         Powered by <strong style={{ color: 'var(--color-text-primary)' }}>Agora Engine</strong>.
                     </p>

@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Agora",
     description="Many voices. Better decisions.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -96,7 +96,7 @@ def health():
     from engine.interface import AgoraEngine
     return {
         "status": "ok",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "engine_version": AgoraEngine.get_engine_version(),
     }
 

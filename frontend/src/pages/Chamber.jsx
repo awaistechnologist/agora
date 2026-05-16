@@ -12,6 +12,22 @@ const STANCE_COLORS = {
 
 const AVATARS = ['#4F7DF2', '#7C5CFC', '#E5484D', '#F5A623', '#34B87A', '#0891B2', '#DB2777']
 
+// Sentinel value for the council picker meaning "let the architect choose".
+const AUTO_PICK = '__auto__'
+
+const BUDGETS = [
+    { key: 'free', label: 'Free', hint: 'Local Ollama models first; then free OpenRouter models. No spend.' },
+    { key: 'cheap', label: 'Cheap', hint: 'Inexpensive paid models — fast and good enough for most things.' },
+    { key: 'best', label: 'Best', hint: 'Top-tier paid models. Highest quality, highest cost.' },
+]
+
+const PERSPECTIVE_COLORS = {
+    supportive: '#34B87A',
+    neutral: '#6B7280',
+    critical: '#F5A623',
+    contrarian: '#E5484D',
+}
+
 export default function Chamber() {
     const { sessionId } = useParams()
     const [councils, setCouncils] = useState([])
@@ -21,9 +37,12 @@ export default function Chamber() {
     const [responses, setResponses] = useState([])
     const [verdict, setVerdict] = useState(null)
     const [error, setError] = useState('')
-    const [thinkingName, setThinkingName] = useState('')
     const [loadedSession, setLoadedSession] = useState(null)
     const [preCheckData, setPreCheckData] = useState(null)
+    // Auto-pick mode state
+    const [budget, setBudget] = useState('free')
+    const [designing, setDesigning] = useState(false)
+    const [proposal, setProposal] = useState(null)
     const containerRef = useRef(null)
 
     useEffect(() => {
@@ -84,72 +103,231 @@ export default function Chamber() {
         }
     }
 
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+    const handleStreamEvent = (ev) => {
+        const t = ev.type
+        const d = ev.data || {}
 
-    const submit = async (customStatement = null, bypass = false) => {
-        const finalStatement = customStatement || statement
-        if (!selectedCouncil || !finalStatement.trim() || isRunning) return
+        if (t === 'councillor_start') {
+            setPreCheckData(null)
+            setResponses(prev => {
+                if (prev.find(r => r.councillor_id === d.councillor_id)) return prev
+                return [...prev, {
+                    councillor_id: d.councillor_id,
+                    councillor_name: d.councillor_name,
+                    councillor_role: d.councillor_role || '',
+                    response_text: '',
+                    stance: 'mixed',
+                    model_used: d.model_used || '',
+                    streaming: true,
+                }]
+            })
+            scrollToBottom()
+        } else if (t === 'councillor_token') {
+            setResponses(prev => prev.map(r =>
+                r.councillor_id === d.councillor_id
+                    ? { ...r, response_text: (r.response_text || '') + (d.delta || '') }
+                    : r
+            ))
+        } else if (t === 'councillor_response') {
+            // Final councillor data — merge with any token-built text we already have.
+            setResponses(prev => prev.map(r =>
+                r.councillor_id === d.councillor_id
+                    ? { ...r, ...d, streaming: false }
+                    : r
+            ))
+        } else if (t === 'verdict_start') {
+            setVerdict({ verdict_text: '', streaming: true, model_used: d.model_used })
+            scrollToBottom()
+        } else if (t === 'verdict_token') {
+            setVerdict(prev => ({
+                ...(prev || { verdict_text: '' }),
+                verdict_text: ((prev && prev.verdict_text) || '') + (d.delta || ''),
+                streaming: true,
+            }))
+        } else if (t === 'verdict') {
+            setVerdict({ ...d, streaming: false })
+            scrollToBottom()
+        } else if (t === 'pre_check') {
+            setPreCheckData(d)
+            scrollToBottom()
+        } else if (t === 'error') {
+            setError(d.message || 'Something went wrong.')
+        }
+    }
+
+    // Drive a streaming deliberation. Factored out so both the normal "user
+    // picked a council" path and the auto-pick "we just designed one" path
+    // can call it with explicit council + optional model_override + optional
+    // force_web_search (Auto-pick uses this when routing to an existing
+    // council that has web search OFF but the architect says we need it).
+    const streamSubmit = async (statementText, bypass, councilId, modelOverride, forceWebSearch = false) => {
+        if (!councilId || !statementText.trim() || isRunning) return
 
         setIsRunning(true)
         setResponses([])
         setVerdict(null)
         setError('')
-        setThinkingName('')
         setPreCheckData(null)
 
         try {
-            const res = await fetch('/api/chamber/submit', {
+            const res = await fetch('/api/chamber/submit/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    council_id: selectedCouncil,
-                    statement: finalStatement.trim(),
-                    bypass_pre_check: bypass
+                    council_id: councilId,
+                    statement: statementText.trim(),
+                    bypass_pre_check: bypass,
+                    model_override: modelOverride || null,
+                    force_web_search: !!forceWebSearch,
                 }),
             })
-            const data = await res.json()
-
-            if (!res.ok) {
+            if (!res.ok || !res.body) {
+                const data = await res.json().catch(() => ({}))
                 setError(data.detail || 'Something went wrong.')
                 setIsRunning(false)
                 return
             }
 
-            const allEvents = data.events || []
-
-            // Progressive reveal — show each councillor one at a time
-            for (let i = 0; i < allEvents.length; i++) {
-                const ev = allEvents[i]
-
-                if (ev.type === 'councillor_start') {
-                    setThinkingName(ev.data.councillor_name)
-                    setPreCheckData(null) // Clear pre-check if we are proceeding
-                    scrollToBottom()
-                    await sleep(800)
-                } else if (ev.type === 'councillor_response') {
-                    setThinkingName('')
-                    setResponses(prev => [...prev, ev.data])
-                    scrollToBottom()
-                    await sleep(500)
-                } else if (ev.type === 'verdict') {
-                    setThinkingName('')
-                    await sleep(400)
-                    setVerdict(ev.data)
-                    scrollToBottom()
-                } else if (ev.type === 'pre_check') {
-                    setThinkingName('')
-                    setPreCheckData(ev.data)
-                    scrollToBottom()
-                } else if (ev.type === 'error') {
-                    setError(ev.data.message)
+            // Manually parse SSE — EventSource is GET-only, and we need a POST body.
+            const reader = res.body.getReader()
+            const decoder = new TextDecoder()
+            let buffer = ''
+            while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
+                buffer += decoder.decode(value, { stream: true })
+                let sep
+                while ((sep = buffer.indexOf('\n\n')) !== -1) {
+                    const block = buffer.slice(0, sep)
+                    buffer = buffer.slice(sep + 2)
+                    const dataLines = block.split('\n')
+                        .filter(line => line.startsWith('data:'))
+                        .map(line => line.slice(5).trim())
+                    if (!dataLines.length) continue
+                    try {
+                        handleStreamEvent(JSON.parse(dataLines.join('\n')))
+                    } catch {
+                        // ignore malformed chunks
+                    }
                 }
             }
         } catch (err) {
             setError('Failed to submit statement. Is the backend running?')
         }
 
-        setThinkingName('')
         setIsRunning(false)
+    }
+
+    // Main entry point. If the user picked Auto-pick, first call the architect
+    // and show a proposal — the deliberation only starts after they confirm.
+    // Otherwise, just stream against the selected council.
+    const submit = async (customStatement = null, bypass = false) => {
+        const finalStatement = customStatement || statement
+        if (!selectedCouncil || !finalStatement.trim() || isRunning || designing) return
+
+        if (selectedCouncil === AUTO_PICK) {
+            setDesigning(true)
+            setError('')
+            setProposal(null)
+            setResponses([])
+            setVerdict(null)
+            setPreCheckData(null)
+            try {
+                const res = await fetch('/api/chamber/auto-design', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ statement: finalStatement.trim(), budget }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    const detail = data.detail
+                    const msg = typeof detail === 'string'
+                        ? detail
+                        : (detail && detail.message) || 'Auto-design failed.'
+                    setError(msg)
+                } else {
+                    setProposal(data)
+                    scrollToBottom()
+                }
+            } catch {
+                setError('Failed to reach backend for auto-design.')
+            }
+            setDesigning(false)
+            return
+        }
+
+        streamSubmit(finalStatement, bypass, selectedCouncil, null)
+    }
+
+    // User confirmed the architect's proposal. If they need a new council,
+    // materialise it via the existing POST /api/councils; then stream the
+    // deliberation against it, passing the architect-chosen model as override.
+    const runProposal = async () => {
+        if (!proposal) return
+        setError('')
+        let councilId = proposal.decision === 'use_existing' ? proposal.council_id : null
+        const wantsSearch = !!proposal.needs_web_search
+
+        if (proposal.decision === 'create_new') {
+            try {
+                const nc = proposal.new_council
+                const body = {
+                    name: nc.name,
+                    description: nc.description,
+                    icon: nc.icon || 'users',
+                    coordinator_instructions: nc.coordinator_instructions || null,
+                    // Architect already analysed the statement — skip pre-check for this council.
+                    pre_check_enabled: false,
+                    // If architect says the topic is time-sensitive, bake web
+                    // search into the new council so it's on for future runs too.
+                    // 'local' (DuckDuckGo) works with both cloud and Ollama models.
+                    web_search_enabled: wantsSearch,
+                    web_search_provider: wantsSearch ? 'local' : 'openrouter',
+                    councillors: (nc.councillors || []).map(c => ({
+                        name: c.name,
+                        role_description: c.role_description,
+                        expertise_area: c.expertise_area || '',
+                        perspective: c.perspective || 'neutral',
+                        instructions: c.instructions || null,
+                        model_tier: c.model_tier || 'balanced',
+                    })),
+                }
+                const res = await fetch('/api/councils', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                })
+                const created = await res.json()
+                if (!res.ok || !created.id) {
+                    setError(created.detail || 'Could not create the proposed council.')
+                    return
+                }
+                councilId = created.id
+                // Refresh the council list so the new one shows in the picker.
+                fetch('/api/councils')
+                    .then(r => r.json())
+                    .then(data => setCouncils(data.filter(c => c.is_active)))
+                    .catch(() => { })
+            } catch {
+                setError('Failed to create the proposed council.')
+                return
+            }
+        }
+
+        const modelOverride = (proposal.chosen_model && proposal.chosen_model.id) || null
+        // For use_existing, the existing council may have web search OFF;
+        // pass a per-submission override so the architect's call is honoured.
+        // For create_new it's already baked in but passing again is harmless.
+        const forceSearch = wantsSearch
+        setProposal(null)
+        // Switch the picker to the actual council so the user sees what's running.
+        setSelectedCouncil(councilId)
+        streamSubmit(statement, true, councilId, modelOverride, forceSearch)
+    }
+
+    const cancelProposal = () => {
+        setProposal(null)
+        setError('')
     }
 
     const handleKeyDown = (e) => {
@@ -177,10 +355,11 @@ export default function Chamber() {
                     </label>
                     <select
                         value={selectedCouncil}
-                        onChange={e => setSelectedCouncil(e.target.value)}
+                        onChange={e => { setSelectedCouncil(e.target.value); setProposal(null); setError('') }}
                         className="input"
                         style={{ cursor: 'pointer' }}
                     >
+                        <option value={AUTO_PICK}>🪄 Auto-pick (Agora chooses or designs)</option>
                         {councils.map(c => (
                             <option key={c.id} value={c.id}>
                                 {c.name} ({c.councillor_count} councillors)
@@ -195,6 +374,40 @@ export default function Chamber() {
                             background: 'rgba(79,125,242,0.1)',
                         }}>
                             🌐 Web Search Enabled
+                        </div>
+                    )}
+
+                    {/* Budget knob — only in Auto-pick mode */}
+                    {selectedCouncil === AUTO_PICK && (
+                        <div style={{ marginTop: '10px' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#9CA3AF', marginBottom: '6px' }}>
+                                Budget
+                            </label>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                {BUDGETS.map(b => {
+                                    const on = budget === b.key
+                                    return (
+                                        <button
+                                            key={b.key}
+                                            onClick={() => setBudget(b.key)}
+                                            title={b.hint}
+                                            style={{
+                                                flex: 1, padding: '8px 12px', borderRadius: '8px',
+                                                fontSize: '13px', fontWeight: on ? 600 : 500,
+                                                background: on ? 'var(--color-primary)' : 'transparent',
+                                                color: on ? '#fff' : '#6B7280',
+                                                border: on ? '1px solid var(--color-primary)' : '1px solid #E5E7EB',
+                                                cursor: 'pointer', transition: 'all 0.15s',
+                                            }}
+                                        >
+                                            {b.label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                            <p style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '6px', lineHeight: 1.4 }}>
+                                {BUDGETS.find(b => b.key === budget)?.hint}
+                            </p>
                         </div>
                     )}
                 </div>
@@ -270,8 +483,8 @@ export default function Chamber() {
             {/* Results */}
             <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '40px' }}>
 
-                {/* Central Loader */}
-                {isRunning && !thinkingName && responses.length === 0 && !preCheckData && (
+                {/* Central Loader — only shown briefly before any councillor starts */}
+                {isRunning && responses.length === 0 && !preCheckData && !verdict && (
                     <div className="animate-fade-in" style={{
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                         padding: '60px 0', opacity: 0.8
@@ -296,6 +509,37 @@ export default function Chamber() {
                     </div>
                 )}
 
+                {/* Designing-your-council loader (Auto-pick architect phase) */}
+                {designing && (
+                    <div className="animate-fade-in" style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '40px 0',
+                    }}>
+                        <div style={{ position: 'relative', width: '48px', height: '48px', marginBottom: '14px' }}>
+                            <div style={{
+                                position: 'absolute', inset: 0, borderRadius: '50%',
+                                border: '3px solid #E5E7EB', borderTopColor: '#7C5CFC',
+                                animation: 'spin 1s linear infinite',
+                            }} />
+                        </div>
+                        <p style={{ fontSize: '15px', fontWeight: 600, color: '#374151' }}>
+                            🪄 Designing your council…
+                        </p>
+                        <p style={{ fontSize: '12px', color: '#9CA3AF', marginTop: '4px' }}>
+                            Picking a working model, then choosing or designing the right council.
+                        </p>
+                    </div>
+                )}
+
+                {/* Architect proposal — shown after /auto-design returns; awaits user confirm */}
+                {proposal && (
+                    <ProposalCard
+                        proposal={proposal}
+                        onRun={runProposal}
+                        onCancel={cancelProposal}
+                    />
+                )}
+
                 {/* Pre-Check Card */}
                 {preCheckData && (
                     <PreCheckCard
@@ -312,23 +556,6 @@ export default function Chamber() {
                     />
                 )}
 
-                {/* Active councillor "thinking" indicator */}
-                {thinkingName && (
-                    <div className="card animate-fade-in" style={{ padding: '18px 22px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                            {[0, 1, 2].map(i => (
-                                <span key={i} style={{
-                                    width: '7px', height: '7px', borderRadius: '50%',
-                                    background: '#4F7DF2',
-                                    animation: `pulseDot 1.2s ease-in-out ${i * 0.3}s infinite`,
-                                }} />
-                            ))}
-                        </div>
-                        <span style={{ fontSize: '14px', color: '#6B7280' }}>
-                            <strong style={{ color: '#111827' }}>{thinkingName}</strong> is deliberating...
-                        </span>
-                    </div>
-                )}
 
                 {/* Councillor Response Cards */}
                 {responses.map((d, idx) => {
@@ -367,15 +594,37 @@ export default function Chamber() {
                                         <p style={{ fontSize: '12px', color: '#9CA3AF', marginTop: '2px' }}>{d.councillor_role}</p>
                                     )}
                                 </div>
-                                <span style={{
-                                    padding: '4px 12px', fontSize: '11px', fontWeight: 600,
-                                    borderRadius: '20px', textTransform: 'capitalize',
-                                    background: stanceStyle.bg, color: stanceStyle.color,
-                                    border: `1px solid ${stanceStyle.border}`,
-                                    whiteSpace: 'nowrap',
-                                }}>
-                                    {d.stance}
-                                </span>
+                                {d.streaming ? (
+                                    <span style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                        padding: '4px 10px', fontSize: '11px', fontWeight: 600,
+                                        borderRadius: '20px',
+                                        background: '#EFF6FF', color: '#2563EB',
+                                        border: '1px solid rgba(37,99,235,0.2)',
+                                        whiteSpace: 'nowrap',
+                                    }}>
+                                        <span style={{ display: 'inline-flex', gap: '3px' }}>
+                                            {[0, 1, 2].map(i => (
+                                                <span key={i} style={{
+                                                    width: '5px', height: '5px', borderRadius: '50%',
+                                                    background: '#2563EB',
+                                                    animation: `pulseDot 1.2s ease-in-out ${i * 0.3}s infinite`,
+                                                }} />
+                                            ))}
+                                        </span>
+                                        thinking
+                                    </span>
+                                ) : (
+                                    <span style={{
+                                        padding: '4px 12px', fontSize: '11px', fontWeight: 600,
+                                        borderRadius: '20px', textTransform: 'capitalize',
+                                        background: stanceStyle.bg, color: stanceStyle.color,
+                                        border: `1px solid ${stanceStyle.border}`,
+                                        whiteSpace: 'nowrap',
+                                    }}>
+                                        {d.stance}
+                                    </span>
+                                )}
                             </div>
 
                             {/* Body — response text */}
@@ -386,8 +635,17 @@ export default function Chamber() {
                                     whiteSpace: 'pre-wrap',
                                     color: '#1F2937',
                                     wordBreak: 'break-word',
+                                    minHeight: d.streaming && !d.response_text ? '24px' : undefined,
                                 }}>
                                     {d.response_text}
+                                    {d.streaming && (
+                                        <span style={{
+                                            display: 'inline-block', width: '2px', height: '1em',
+                                            verticalAlign: 'text-bottom', marginLeft: '2px',
+                                            background: '#4F7DF2',
+                                            animation: 'pulseDot 1s ease-in-out infinite',
+                                        }} />
+                                    )}
                                 </p>
                             </div>
 
@@ -426,7 +684,13 @@ export default function Chamber() {
                             padding: '16px 22px', borderBottom: '1px solid rgba(124,92,252,0.12)',
                         }}>
                             <Brain size={20} style={{ color: '#7C5CFC' }} />
-                            <h3 style={{ fontWeight: 700, color: '#7C5CFC', flex: 1, fontSize: '16px' }}>Verdict</h3>
+                            <h3 style={{ fontWeight: 700, color: '#7C5CFC', flex: 1, fontSize: '16px' }}>
+                                Verdict {verdict.streaming && (
+                                    <span style={{ fontSize: '11px', fontWeight: 500, color: '#9CA3AF', marginLeft: '8px' }}>
+                                        synthesising…
+                                    </span>
+                                )}
+                            </h3>
                             {verdict.confidence && (
                                 <span style={{
                                     padding: '4px 12px', fontSize: '11px', fontWeight: 600, borderRadius: '20px',
@@ -449,6 +713,14 @@ export default function Chamber() {
                                 wordBreak: 'break-word',
                             }}>
                                 {verdict.verdict_text}
+                                {verdict.streaming && (
+                                    <span style={{
+                                        display: 'inline-block', width: '2px', height: '1em',
+                                        verticalAlign: 'text-bottom', marginLeft: '2px',
+                                        background: '#7C5CFC',
+                                        animation: 'pulseDot 1s ease-in-out infinite',
+                                    }} />
+                                )}
                             </p>
                         </div>
 
@@ -470,6 +742,147 @@ export default function Chamber() {
                             )}
                         </div>
                     </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+
+// Auto-pick proposal card. Shows the architect's decision: either "we'll use
+// this existing council" or "we designed this fresh one for you" — with the
+// chosen model and a councillor preview. Run / Cancel buttons let the user
+// confirm before any council is created or any deliberation starts.
+function ProposalCard({ proposal, onRun, onCancel }) {
+    const isNew = proposal.decision === 'create_new'
+    const nc = proposal.new_council || {}
+    const chosen = proposal.chosen_model || {}
+    return (
+        <div className="animate-fade-in-up" style={{
+            background: 'linear-gradient(135deg, #F5F3FF 0%, #EEF2FF 100%)',
+            borderRadius: '12px',
+            border: '1px solid rgba(124,92,252,0.25)',
+            boxShadow: '0 2px 12px rgba(124,92,252,0.08)',
+            overflow: 'hidden',
+            marginBottom: '16px',
+        }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid rgba(124,92,252,0.12)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 700, color: '#5B21B6' }}>🪄 Council Proposal</span>
+                    {chosen.id && (
+                        <span style={{
+                            fontSize: '11px', fontWeight: 600, padding: '2px 8px',
+                            borderRadius: '4px', background: 'rgba(124,92,252,0.12)',
+                            color: '#5B21B6', fontFamily: 'monospace',
+                        }}>
+                            {chosen.name || chosen.id} · {chosen.budget}
+                        </span>
+                    )}
+                    {proposal.needs_web_search && (
+                        <span
+                            title={proposal.web_search_rationale || 'The architect thinks this question needs current web information.'}
+                            style={{
+                                fontSize: '11px', fontWeight: 600, padding: '2px 8px',
+                                borderRadius: '4px', background: 'rgba(34,184,122,0.12)',
+                                color: '#15803D', display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            }}
+                        >
+                            🌐 Web search on
+                        </span>
+                    )}
+                </div>
+                <p style={{ fontSize: '13px', color: '#4C1D95', lineHeight: 1.5 }}>
+                    {proposal.rationale}
+                </p>
+                {proposal.needs_web_search && proposal.web_search_rationale && (
+                    <p style={{ fontSize: '12px', color: '#166534', marginTop: '6px', lineHeight: 1.5 }}>
+                        🌐 {proposal.web_search_rationale}
+                    </p>
+                )}
+            </div>
+
+            <div style={{ padding: '18px 22px' }}>
+                {isNew ? (
+                    <>
+                        <p style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', marginBottom: '10px' }}>
+                            New council: {nc.name}
+                        </p>
+                        <p style={{ fontSize: '13px', color: '#374151', marginBottom: '14px', lineHeight: 1.5 }}>
+                            {nc.description}
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {(nc.councillors || []).map((c, i) => (
+                                <div key={i} style={{
+                                    display: 'flex', alignItems: 'center', gap: '12px',
+                                    padding: '10px 12px', borderRadius: '8px',
+                                    background: '#fff', border: '1px solid #E5E7EB',
+                                }}>
+                                    <span style={{
+                                        width: '8px', height: '8px', borderRadius: '50%',
+                                        background: PERSPECTIVE_COLORS[c.perspective] || PERSPECTIVE_COLORS.neutral,
+                                        flexShrink: 0,
+                                    }} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{c.name}</span>
+                                        {c.expertise_area && (
+                                            <span style={{ fontSize: '12px', color: '#6B7280', marginLeft: '8px' }}>· {c.expertise_area}</span>
+                                        )}
+                                        <p style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px', lineHeight: 1.5 }}>
+                                            {c.role_description}
+                                        </p>
+                                    </div>
+                                    <span style={{
+                                        fontSize: '10px', fontWeight: 700, padding: '2px 6px',
+                                        borderRadius: '4px', background: '#F3F4F6', color: '#4B5563',
+                                        textTransform: 'uppercase', flexShrink: 0,
+                                    }}>
+                                        {c.model_tier}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                        <p style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '10px', lineHeight: 1.5 }}>
+                            This council will be saved so you can reuse and edit it later.
+                        </p>
+                    </>
+                ) : (
+                    <p style={{ fontSize: '13px', color: '#374151' }}>
+                        Going to use the existing <strong>{proposal.council_id?.replace(/^default-/, '')}</strong> council for this question.
+                    </p>
+                )}
+            </div>
+
+            <div style={{
+                display: 'flex', gap: '10px', padding: '12px 22px',
+                borderTop: '1px solid rgba(124,92,252,0.12)',
+                background: 'rgba(255,255,255,0.4)',
+            }}>
+                <button
+                    onClick={onRun}
+                    style={{
+                        padding: '8px 18px', fontSize: '13px', fontWeight: 600,
+                        borderRadius: '8px', cursor: 'pointer',
+                        background: '#7C5CFC', color: '#fff', border: 'none',
+                        boxShadow: '0 1px 3px rgba(124,92,252,0.3)',
+                    }}
+                >
+                    Run
+                </button>
+                <button
+                    onClick={onCancel}
+                    style={{
+                        padding: '8px 16px', fontSize: '13px', fontWeight: 500,
+                        borderRadius: '8px', cursor: 'pointer',
+                        background: 'transparent', color: '#6B7280',
+                        border: '1px solid #E5E7EB',
+                    }}
+                >
+                    Cancel
+                </button>
+                {typeof proposal.cost_usd === 'number' && (
+                    <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: '11px', color: '#9CA3AF', fontFamily: 'monospace' }}>
+                        Design cost: ${proposal.cost_usd.toFixed(4)} · {proposal.total_tokens || 0} tokens
+                    </span>
                 )}
             </div>
         </div>
