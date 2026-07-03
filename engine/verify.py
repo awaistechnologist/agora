@@ -18,15 +18,20 @@ import re
 
 logger = logging.getLogger("agora.engine.verify")
 
-VERDICTS = ("supported", "contradicted", "unverified")
+VERDICTS = ("supported", "contradicted", "unverified", "not_a_claim")
 BATCH_SIZE = 5  # claims per judge call
 MAX_EVIDENCE_PER_CLAIM = 4
 
 JUDGE_SYSTEM = """You are a careful fact-checking judge. For each numbered claim you are
 given web search evidence. Grade each claim STRICTLY on the evidence provided:
-- "supported": the evidence clearly backs the claim.
-- "contradicted": the evidence clearly conflicts with the claim.
+- "supported": the evidence clearly backs the claim AS STATED.
+- "contradicted": the evidence clearly conflicts with the claim AS STATED.
 - "unverified": the evidence is insufficient, off-topic, or mixed. When in doubt, use this.
+- "not_a_claim": the line is not a checkable factual statement (an opinion, greeting,
+  question, or call to action like "follow for more").
+IMPORTANT: grade the claim exactly as stated, including its negations. A line that says
+"X is a myth" or "X? Not true" is asserting NOT-X — if the evidence debunks X, that line
+is "supported", not "contradicted".
 Never use outside knowledge to mark a claim "supported" — evidence only. You may use
 well-established knowledge to mark an obviously false claim "contradicted".
 Respond ONLY with valid JSON, no markdown fences, no commentary."""
@@ -36,7 +41,7 @@ JUDGE_TEMPLATE = """Grade these claims against their evidence:
 {blocks}
 
 Respond with EXACTLY this JSON shape, one entry per claim, in order:
-{{"results": [{{"claim": 1, "verdict": "supported|contradicted|unverified",
+{{"results": [{{"claim": 1, "verdict": "supported|contradicted|unverified|not_a_claim",
 "note": "one short sentence explaining the verdict"}}]}}"""
 
 
