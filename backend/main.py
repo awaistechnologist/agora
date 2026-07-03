@@ -24,6 +24,7 @@ from backend.api import councils as councils_api
 from backend.api import chamber as chamber_api
 from backend.api import mcp as mcp_api
 from backend.api import ollama as ollama_api
+from backend.api import verify as verify_api
 
 # ─── Logging ───────────────────────────────────────────────────────────────
 log_level = os.getenv("AGORA_LOG_LEVEL", "INFO").upper()
@@ -88,6 +89,7 @@ app.include_router(councils_api.router)
 app.include_router(chamber_api.router)
 app.include_router(mcp_api.router)
 app.include_router(ollama_api.router)
+app.include_router(verify_api.router)
 
 
 # ─── Health ────────────────────────────────────────────────────────────────
