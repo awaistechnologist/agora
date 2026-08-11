@@ -143,8 +143,13 @@ def _candidates(db: Session, budget: str) -> list[str]:
 
     cloud_candidates = preferred_ids + fallback_ids
     if budget == "free":
-        # Local Ollama models go FIRST — reliable, no rate limits.
-        return _ollama_candidates() + cloud_candidates
+        api_key = settings_service.get_api_key(db)
+        if api_key:
+            # API key present → try OpenRouter free models first, Ollama as fallback.
+            return cloud_candidates + _ollama_candidates()
+        else:
+            # No API key → Ollama is the only real option.
+            return _ollama_candidates() + cloud_candidates
     return cloud_candidates
 
 
@@ -255,4 +260,67 @@ def pick(db: Session, budget: str, max_attempts: int = 6, exclude: set | None = 
             "OpenRouter key has credit."
         ),
         "attempts": attempts,
+    }
+
+
+def pick_pool(db: Session, budget: str, max_attempts: int = 8, exclude: set | None = None) -> dict:
+    """Like pick(), but returns up to 3 distinct working models mapped to tiers.
+
+    For Ollama or no-key runs, all tiers get the same model (local inference
+    is already diversified by the model itself). For OpenRouter, we try to
+    pick a separate verified model for each tier so different councillors use
+    different LLMs — that's the whole point of the cloud free tier.
+
+    Returns:
+      {ok: True, models: {fast, balanced, powerful}, model_names: {...},
+       primary_model: str, primary_model_name: str, attempts: [...]}
+    or the standard {ok: False, error, attempts} on failure."""
+    first = pick(db, budget, max_attempts=max_attempts, exclude=exclude)
+    if not first.get("ok"):
+        return first
+
+    first_id = first["model_id"]
+    all_attempts = list(first["attempts"])
+    api_key = settings_service.get_api_key(db)
+
+    # No diversification for local-only runs — every tier gets the same model.
+    if first_id.startswith(OLLAMA_PREFIX) or not api_key:
+        name = first["model_name"]
+        return {
+            "ok": True,
+            "models": {"fast": first_id, "balanced": first_id, "powerful": first_id},
+            "model_names": {"fast": name, "balanced": name, "powerful": name},
+            "primary_model": first_id,
+            "primary_model_name": name,
+            "attempts": all_attempts,
+        }
+
+    # OpenRouter: pick up to 2 more distinct working models for tier variety.
+    excluded = (exclude or set()) | {first_id}
+    extras: list[dict] = []
+    for _ in range(2):
+        nxt = pick(db, budget, max_attempts=max_attempts, exclude=excluded)
+        all_attempts += nxt.get("attempts", [])
+        if nxt.get("ok"):
+            extras.append(nxt)
+            excluded.add(nxt["model_id"])
+
+    # Assign tiers: balanced gets the first pick (most councillors default to
+    # it), fast and powerful get extras when available.
+    tier_order = ["balanced", "fast", "powerful"]
+    tier_picks = [first] + extras
+    models: dict[str, str] = {}
+    model_names: dict[str, str] = {}
+    for i, tier in enumerate(tier_order):
+        p = tier_picks[min(i, len(tier_picks) - 1)]
+        models[tier] = p["model_id"]
+        model_names[tier] = p["model_name"]
+
+    return {
+        "ok": True,
+        "models": models,
+        "model_names": model_names,
+        "primary_model": first_id,
+        "primary_model_name": first["model_name"],
+        "attempts": all_attempts,
     }

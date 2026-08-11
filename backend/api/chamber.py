@@ -66,6 +66,7 @@ async def submit_statement_stream(body: SubmitRequest, db: Session = Depends(get
                 db, body.council_id, body.statement,
                 bypass_pre_check=body.bypass_pre_check,
                 model_override=body.model_override,
+                model_overrides=body.model_overrides,
                 force_web_search=body.force_web_search,
             ):
                 yield f"data: {json.dumps(event)}\n\n"
@@ -130,9 +131,13 @@ async def stream_session(session_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/sessions")
-def list_sessions(db: Session = Depends(get_db)):
-    """List past deliberation sessions."""
-    return chamber_service.get_sessions(db)
+def list_sessions(
+    db: Session = Depends(get_db),
+    limit: int | None = None,
+    search: str | None = None,
+):
+    """List past deliberation sessions. Supports ?limit=N and ?search=term."""
+    return chamber_service.get_sessions(db, limit=limit, search=search)
 
 
 @router.get("/sessions/{session_id}")

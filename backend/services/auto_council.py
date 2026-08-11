@@ -187,21 +187,26 @@ def design_for_statement(db: Session, statement: str, budget: str = "free") -> d
     last_attempts: list = []
     architect_model = ""
     architect_model_name = ""
+    chosen_models: dict = {}
+    chosen_model_names: dict = {}
     content = ""
     usage = None
     last_transient_error: str | None = None
 
     for retry in range(3):
-        pick_result = model_picker.pick(db, budget, exclude=excluded)
-        if not pick_result.get("ok"):
-            err = pick_result.get("error", "Could not pick a model.")
+        pool_result = model_picker.pick_pool(db, budget, exclude=excluded)
+        if not pool_result.get("ok"):
+            err = pool_result.get("error", "Could not pick a model.")
             if last_transient_error:
                 err = f"{err} (Earlier model: {last_transient_error})"
-            return {"error": err, "attempts": last_attempts + pick_result.get("attempts", [])}
+            return {"error": err, "attempts": last_attempts + pool_result.get("attempts", [])}
 
-        architect_model = pick_result["model_id"]
-        architect_model_name = pick_result["model_name"]
-        last_attempts = last_attempts + pick_result.get("attempts", [])
+        architect_model = pool_result["primary_model"]
+        architect_model_name = pool_result["primary_model_name"]
+        chosen_models = pool_result["models"]
+        chosen_model_names = pool_result["model_names"]
+        last_attempts = last_attempts + pool_result.get("attempts", [])
+        excluded.add(architect_model)  # exclude from next retry if this one 429s
 
         try:
             # Architect output for a NEW council can easily exceed 2k tokens
@@ -307,6 +312,13 @@ def design_for_statement(db: Session, statement: str, budget: str = "free") -> d
         "id": architect_model,
         "name": architect_model_name,
         "budget": budget,
+    }
+    # Tier-mapped models for diversified deliberation (different models per
+    # councillor tier). Frontend sends these as model_overrides so cloud
+    # councillors get distinct LLMs rather than all sharing one.
+    proposal["chosen_models"] = {
+        tier: {"id": mid, "name": chosen_model_names.get(tier, mid)}
+        for tier, mid in chosen_models.items()
     }
     proposal["model_used"] = architect_model
     proposal["cost_usd"] = round(usage.cost, 6) if usage else 0.0

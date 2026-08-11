@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Send, Loader, DollarSign, Clock, Brain, AlertTriangle } from 'lucide-react'
+import { Send, Loader, DollarSign, Clock, Brain, AlertTriangle, Copy, Check } from 'lucide-react'
 import PreCheckCard from '../components/PreCheckCard'
 
 const STANCE_COLORS = {
@@ -12,11 +12,38 @@ const STANCE_COLORS = {
 
 const AVATARS = ['#4F7DF2', '#7C5CFC', '#E5484D', '#F5A623', '#34B87A', '#0891B2', '#DB2777']
 
+function CopyButton({ text }) {
+    const [copied, setCopied] = useState(false)
+    const copy = () => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        })
+    }
+    return (
+        <button
+            onClick={copy}
+            title={copied ? 'Copied!' : 'Copy to clipboard'}
+            style={{
+                marginLeft: 'auto', display: 'flex', alignItems: 'center',
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: '4px', borderRadius: '6px',
+                color: copied ? '#059669' : '#9CA3AF',
+                transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => { if (!copied) e.currentTarget.style.color = '#6B7280' }}
+            onMouseLeave={e => { if (!copied) e.currentTarget.style.color = '#9CA3AF' }}
+        >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+    )
+}
+
 // Sentinel value for the council picker meaning "let the architect choose".
 const AUTO_PICK = '__auto__'
 
 const BUDGETS = [
-    { key: 'free', label: 'Free', hint: 'Local Ollama models first; then free OpenRouter models. No spend.' },
+    { key: 'free', label: 'Free', hint: 'Free OpenRouter models first; Ollama as fallback if no API key. No spend.' },
     { key: 'cheap', label: 'Cheap', hint: 'Inexpensive paid models — fast and good enough for most things.' },
     { key: 'best', label: 'Best', hint: 'Top-tier paid models. Highest quality, highest cost.' },
 ]
@@ -160,7 +187,7 @@ export default function Chamber() {
     // can call it with explicit council + optional model_override + optional
     // force_web_search (Auto-pick uses this when routing to an existing
     // council that has web search OFF but the architect says we need it).
-    const streamSubmit = async (statementText, bypass, councilId, modelOverride, forceWebSearch = false) => {
+    const streamSubmit = async (statementText, bypass, councilId, modelOverride, forceWebSearch = false, modelOverrides = null) => {
         if (!councilId || !statementText.trim() || isRunning) return
 
         setIsRunning(true)
@@ -178,6 +205,7 @@ export default function Chamber() {
                     statement: statementText.trim(),
                     bypass_pre_check: bypass,
                     model_override: modelOverride || null,
+                    model_overrides: modelOverrides || null,
                     force_web_search: !!forceWebSearch,
                 }),
             })
@@ -314,7 +342,16 @@ export default function Chamber() {
             }
         }
 
-        const modelOverride = (proposal.chosen_model && proposal.chosen_model.id) || null
+        // Use per-tier model overrides when available (OpenRouter diversification).
+        // Fall back to single model_override for Ollama / legacy responses.
+        const modelOverrides = proposal.chosen_models
+            ? Object.fromEntries(
+                Object.entries(proposal.chosen_models).map(([tier, m]) => [tier, m.id])
+              )
+            : null
+        const modelOverride = (!modelOverrides && proposal.chosen_model)
+            ? proposal.chosen_model.id
+            : null
         // For use_existing, the existing council may have web search OFF;
         // pass a per-submission override so the architect's call is honoured.
         // For create_new it's already baked in but passing again is harmless.
@@ -322,7 +359,7 @@ export default function Chamber() {
         setProposal(null)
         // Switch the picker to the actual council so the user sees what's running.
         setSelectedCouncil(councilId)
-        streamSubmit(statement, true, councilId, modelOverride, forceSearch)
+        streamSubmit(statement, true, councilId, modelOverride, forceSearch, modelOverrides)
     }
 
     const cancelProposal = () => {
@@ -665,6 +702,7 @@ export default function Chamber() {
                                 <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6B7280' }}>
                                     ${(d.cost_usd || 0).toFixed(4)}
                                 </span>
+                                {!d.streaming && d.response_text && <CopyButton text={d.response_text} />}
                             </div>
                         </div>
                     )
@@ -740,6 +778,7 @@ export default function Chamber() {
                                     <Clock size={13} /> {verdict.duration_seconds}s
                                 </span>
                             )}
+                            {!verdict.streaming && verdict.verdict_text && <CopyButton text={verdict.verdict_text} />}
                         </div>
                     </div>
                 )}
@@ -757,6 +796,11 @@ function ProposalCard({ proposal, onRun, onCancel }) {
     const isNew = proposal.decision === 'create_new'
     const nc = proposal.new_council || {}
     const chosen = proposal.chosen_model || {}
+    const chosenModels = proposal.chosen_models || null
+    const uniqueModels = chosenModels
+        ? [...new Set(Object.values(chosenModels).map(m => m.name || m.id))]
+        : null
+    const isDiversified = uniqueModels && uniqueModels.length > 1
     return (
         <div className="animate-fade-in-up" style={{
             background: 'linear-gradient(135deg, #F5F3FF 0%, #EEF2FF 100%)',
@@ -769,7 +813,18 @@ function ProposalCard({ proposal, onRun, onCancel }) {
             <div style={{ padding: '18px 22px', borderBottom: '1px solid rgba(124,92,252,0.12)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '15px', fontWeight: 700, color: '#5B21B6' }}>🪄 Council Proposal</span>
-                    {chosen.id && (
+                    {isDiversified ? (
+                        <span
+                            title={uniqueModels.join(' · ')}
+                            style={{
+                                fontSize: '11px', fontWeight: 600, padding: '2px 8px',
+                                borderRadius: '4px', background: 'rgba(124,92,252,0.12)',
+                                color: '#5B21B6', fontFamily: 'monospace', cursor: 'default',
+                            }}
+                        >
+                            {uniqueModels.length} models · {chosen.budget}
+                        </span>
+                    ) : chosen.id && (
                         <span style={{
                             fontSize: '11px', fontWeight: 600, padding: '2px 8px',
                             borderRadius: '4px', background: 'rgba(124,92,252,0.12)',
