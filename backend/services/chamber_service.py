@@ -157,6 +157,7 @@ async def submit_statement_streaming(
     statement: str,
     bypass_pre_check: bool = False,
     model_override: str | None = None,
+    model_overrides: dict | None = None,
     force_web_search: bool = False,
 ):
     """Async generator. Streams events from the engine to the API layer (and
@@ -173,10 +174,13 @@ async def submit_statement_streaming(
 
     tier_models = settings_service.get_models_by_tier(db)
 
-    # If a model_override is provided (Auto-pick), it overrides every tier
-    # for this deliberation. We still leave per-councillor explicit overrides
-    # in place — those are the user's hard pin and win over Auto-pick.
-    if model_override:
+    # Auto-pick model overrides. model_overrides (tier dict) takes precedence
+    # over model_override (single string) — the dict form enables diversity
+    # across councillor tiers for OpenRouter. Per-councillor explicit pins on
+    # the council itself still win over both of these.
+    if model_overrides:
+        tier_models = {**tier_models, **model_overrides}
+    elif model_override:
         tier_models = {"fast": model_override, "balanced": model_override, "powerful": model_override}
 
     needs_openrouter = any(not (m or "").startswith("ollama/") for m in tier_models.values())
@@ -300,21 +304,25 @@ async def submit_statement_streaming(
     db.commit()
 
 
-def get_sessions(db: Session, limit: int = 50) -> list[dict]:
-    """List recent sessions."""
-    sessions = (
-        db.query(SessionRow)
-        .order_by(SessionRow.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+def get_sessions(db: Session, limit: int | None = None, search: str | None = None) -> list[dict]:
+    """List sessions, newest first. Optionally filtered by a search string
+    (case-insensitive substring match on statement text)."""
+    q = db.query(SessionRow).order_by(SessionRow.created_at.desc())
+    if limit:
+        q = q.limit(limit)
+    sessions = q.all()
+
+    search_lower = search.strip().lower() if search else None
     result = []
     for s in sessions:
         council = db.query(CouncilRow).filter(CouncilRow.id == s.council_id).first()
+        council_name = council.name if council else "Unknown"
+        if search_lower and search_lower not in s.statement.lower() and search_lower not in council_name.lower():
+            continue
         result.append({
             "id": s.id,
             "council_id": s.council_id,
-            "council_name": council.name if council else "Unknown",
+            "council_name": council_name,
             "statement": s.statement,
             "status": s.status,
             "total_cost_usd": s.total_cost_usd or 0,

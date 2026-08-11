@@ -120,7 +120,12 @@ export default function Dashboard() {
             {/* Recent Activity */}
             {sessions.length > 0 && (
                 <div className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '14px' }}>Recent Activity</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                        <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Recent Activity</h2>
+                        <Link to="/history" style={{ fontSize: '13px', color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
+                            View all →
+                        </Link>
+                    </div>
                     <div className="card" style={{ overflow: 'hidden' }}>
                         {sessions.map((s, i) => (
                             <Link

@@ -1,17 +1,19 @@
 """Pydantic schemas for sessions and responses."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict
 
 
 class SubmitRequest(BaseModel):
     council_id: str
     statement: str = Field(..., min_length=1)
     bypass_pre_check: bool = False
-    # When set, overrides every tier-resolved model in this deliberation
-    # (used by Auto-pick mode after the picker has chosen a verified model).
-    # Per-councillor model_overrides on the council itself still win over this.
+    # Single model override — maps all tiers to one model id (legacy/Ollama).
     model_override: Optional[str] = None
+    # Per-tier model overrides — {fast: id, balanced: id, powerful: id}.
+    # Takes precedence over model_override when set. Used by Auto-pick for
+    # OpenRouter deliberations so different councillor tiers use different LLMs.
+    model_overrides: Optional[Dict[str, str]] = None
     # When True, forces web search ON for this deliberation regardless of the
     # council's saved setting. Used by Auto-pick when the architect detects a
     # time-sensitive statement but routes to an existing council that has

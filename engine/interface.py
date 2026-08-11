@@ -95,26 +95,40 @@ class AgoraEngine:
             "max_tokens": max_tokens,
         }
 
-        try:
-            resp = httpx.post(url, json=payload, headers=headers, timeout=300.0)
-            resp.raise_for_status()
-            data = resp.json()
+        delays = [5, 20]
+        for attempt in range(len(delays) + 1):
+            try:
+                resp = httpx.post(url, json=payload, headers=headers, timeout=300.0)
+                resp.raise_for_status()
+                data = resp.json()
 
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            usage_raw = data.get("usage", {})
-            # Ollama doesn't bill, so cost is always 0 for local calls.
-            cost = 0.0 if is_ollama else (usage_raw.get("cost") or 0.0)
-            usage = UsageData(
-                prompt_tokens=usage_raw.get("prompt_tokens", 0),
-                completion_tokens=usage_raw.get("completion_tokens", 0),
-                total_tokens=usage_raw.get("total_tokens", 0),
-                cost=cost,
-            )
-            return content, usage
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                usage_raw = data.get("usage", {})
+                # Ollama doesn't bill, so cost is always 0 for local calls.
+                cost = 0.0 if is_ollama else (usage_raw.get("cost") or 0.0)
+                usage = UsageData(
+                    prompt_tokens=usage_raw.get("prompt_tokens", 0),
+                    completion_tokens=usage_raw.get("completion_tokens", 0),
+                    total_tokens=usage_raw.get("total_tokens", 0),
+                    cost=cost,
+                )
+                return content, usage
 
-        except Exception as e:
-            logger.error(f"LLM call failed ({'ollama' if is_ollama else 'openrouter'}, model={wire_model}): {e}")
-            raise
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code if e.response is not None else 0
+                if status in (429, 503) and attempt < len(delays):
+                    wait = delays[attempt]
+                    logger.warning(
+                        f"_call_llm: {wire_model} → HTTP {status}, "
+                        f"retrying in {wait}s (attempt {attempt + 1})"
+                    )
+                    time.sleep(wait)
+                else:
+                    logger.error(f"LLM call failed ({'ollama' if is_ollama else 'openrouter'}, model={wire_model}): {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"LLM call failed ({'ollama' if is_ollama else 'openrouter'}, model={wire_model}): {e}")
+                raise
 
     def _infer_stance(self, perspective: str, response_text: str) -> str:
         """Simple stance inference based on councillor perspective."""
@@ -645,17 +659,35 @@ class AgoraEngine:
 
                 text_parts: list[str] = []
                 usage_data = None
-                async for chunk in self._call_llm_stream(
-                    client, model, build_system_prompt(c), statement
-                ):
-                    if chunk["type"] == "token":
-                        text_parts.append(chunk["text"])
-                        await queue.put(SessionEvent("councillor_token", {
-                            "councillor_id": c["id"],
-                            "delta": chunk["text"],
-                        }))
-                    elif chunk["type"] == "usage":
-                        usage_data = chunk["data"]
+                retry_delays = [5, 20]
+
+                for attempt in range(len(retry_delays) + 1):
+                    try:
+                        async for chunk in self._call_llm_stream(
+                            client, model, build_system_prompt(c), statement
+                        ):
+                            if chunk["type"] == "token":
+                                text_parts.append(chunk["text"])
+                                await queue.put(SessionEvent("councillor_token", {
+                                    "councillor_id": c["id"],
+                                    "delta": chunk["text"],
+                                }))
+                            elif chunk["type"] == "usage":
+                                usage_data = chunk["data"]
+                        break  # success
+                    except httpx.HTTPStatusError as e:
+                        status = e.response.status_code if e.response is not None else 0
+                        # Only retry on rate-limit / service-unavailable, and only
+                        # if no tokens have been yielded yet (can't unsend a partial stream).
+                        if status in (429, 503) and attempt < len(retry_delays) and not text_parts:
+                            wait = retry_delays[attempt]
+                            logger.warning(
+                                f"Councillor '{c['name']}': {model} → HTTP {status}, "
+                                f"retrying in {wait}s (attempt {attempt + 1})"
+                            )
+                            await asyncio.sleep(wait)
+                        else:
+                            raise
 
                 response_text = "".join(text_parts)
                 stance = self._infer_stance(c.get("perspective", "neutral"), response_text)
@@ -739,14 +771,30 @@ class AgoraEngine:
 
                 text_parts: list[str] = []
                 verdict_usage = None
-                async for chunk in self._call_llm_stream(
-                    client, coordinator_model, final_ci, synthesis_message, max_tokens=2500
-                ):
-                    if chunk["type"] == "token":
-                        text_parts.append(chunk["text"])
-                        yield SessionEvent("verdict_token", {"delta": chunk["text"]})
-                    elif chunk["type"] == "usage":
-                        verdict_usage = chunk["data"]
+                retry_delays = [5, 20]
+
+                for attempt in range(len(retry_delays) + 1):
+                    try:
+                        async for chunk in self._call_llm_stream(
+                            client, coordinator_model, final_ci, synthesis_message, max_tokens=2500
+                        ):
+                            if chunk["type"] == "token":
+                                text_parts.append(chunk["text"])
+                                yield SessionEvent("verdict_token", {"delta": chunk["text"]})
+                            elif chunk["type"] == "usage":
+                                verdict_usage = chunk["data"]
+                        break  # success
+                    except httpx.HTTPStatusError as e:
+                        status = e.response.status_code if e.response is not None else 0
+                        if status in (429, 503) and attempt < len(retry_delays) and not text_parts:
+                            wait = retry_delays[attempt]
+                            logger.warning(
+                                f"Coordinator: {coordinator_model} → HTTP {status}, "
+                                f"retrying in {wait}s (attempt {attempt + 1})"
+                            )
+                            await asyncio.sleep(wait)
+                        else:
+                            raise
 
                 verdict_text = "".join(text_parts)
                 if not verdict_text.strip():

@@ -5,6 +5,7 @@ import Settings from './pages/Settings'
 import Councils from './pages/Councils'
 import CouncilEditor from './pages/CouncilEditor'
 import Chamber from './pages/Chamber'
+import History from './pages/History'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
         >
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/councils" element={<Councils />} />
             <Route path="/councils/new" element={<CouncilEditor />} />

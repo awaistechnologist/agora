@@ -265,6 +265,53 @@ def run_deliberation(
         db.close()
 
 
+@mcp.tool()
+def verify_claims(claims: list[str], model: str = "") -> dict:
+    """
+    Fact-check factual claims against fresh web evidence (free DuckDuckGo search).
+
+    Each claim gets its own targeted search; a judge model then grades every claim
+    strictly against the evidence found. Much lighter than run_deliberation — use
+    this for "is this true?" checks, and a council for contested/nuanced questions.
+
+    Args:
+        claims: Plain-language factual statements to verify (max 40). Make each
+                claim self-contained, e.g. "The Great Wall of China is visible
+                from space with the naked eye".
+        model:  Optional judge model override (e.g. "ollama/qwen2.5:32b" for
+                fully-local). Defaults to the "fast" tier model from settings,
+                falling back to a local Ollama model when no API key is set.
+
+    Returns {"model": ..., "results": [{claim, verdict, note, sources}]}
+    where verdict is "supported" | "contradicted" | "unverified".
+    """
+    from backend.services import verify_service
+
+    db = _get_db()
+    try:
+        return verify_service.verify_claims(db, claims, model or None)
+    except ValueError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Verification failed: {e}"}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def search_web(query: str, max_results: int = 5) -> dict:
+    """
+    Free web search (DuckDuckGo news + text, no API key) — the same search
+    Agora councils use. Returns formatted markdown results with links.
+    """
+    from engine.search import search_web as _search
+
+    try:
+        return {"query": query, "results": _search(query, max_results=max_results)}
+    except Exception as e:
+        return {"error": f"Search failed: {e}"}
+
+
 # ── entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
