@@ -4,7 +4,7 @@ Everything here runs offline. Network-touching paths (the catalogue fetch, the
 pretest, real completions) are stubbed — they're verified manually against
 live providers, but they don't belong in a suite that has to pass on a plane.
 
-    venv/bin/python -m pytest tests/test_llm_sidecar.py -q
+    python -m pytest llm_sidecar/tests -q
 """
 
 from __future__ import annotations
