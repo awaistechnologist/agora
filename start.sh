@@ -20,6 +20,12 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Pick up new Python dependencies after a `git pull` (e.g. llm-sidecar in 0.4.0)
+if ! python3 -c "import llm_sidecar" 2>/dev/null; then
+    echo "📦 Installing new Python dependencies..."
+    pip install -q -r requirements.txt
+fi
+
 # Always rebuild frontend to pick up any code changes
 echo "📦 Building frontend..."
 cd frontend && npm run build --silent && cd ..

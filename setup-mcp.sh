@@ -20,7 +20,7 @@ PYTHON="$(pwd)/venv/bin/python"
 SERVER="$(pwd)/mcp_server/server.py"
 
 # ── Verify mcp package is available ───────────────────────────────────────
-if ! "$PYTHON" -c "from mcp.server.fastmcp import FastMCP" 2>/dev/null; then
+if ! "$PYTHON" -c "import mcp.server; getattr(mcp.server, 'MCPServer', None) or __import__('mcp.server.fastmcp')" 2>/dev/null; then
     echo "📦 Installing mcp package..."
     "$PYTHON" -m pip install -q "mcp>=1.0.0"
 fi

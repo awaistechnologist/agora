@@ -39,11 +39,15 @@ logging.getLogger("agora").setLevel(logging.WARNING)
 logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
 # ── imports ───────────────────────────────────────────────────────────────────
-from mcp.server.fastmcp import FastMCP
+# SDK 2.0 renamed FastMCP to MCPServer; decorator and run() APIs are unchanged.
+try:
+    from mcp.server import MCPServer as _Server
+except ImportError:  # mcp < 2.0
+    from mcp.server.fastmcp import FastMCP as _Server
 from backend.database import get_db, SessionLocal
 from backend.services import council_service, chamber_service, settings_service
 
-mcp = FastMCP(
+mcp = _Server(
     name="agora",
     instructions=(
         "Agora is a multi-perspective AI council system. "
@@ -268,7 +272,7 @@ def run_deliberation(
 @mcp.tool()
 def verify_claims(claims: list[str], model: str = "") -> dict:
     """
-    Fact-check factual claims against fresh web evidence (free DuckDuckGo search).
+    Fact-check factual claims against fresh web evidence (free web search via llm-sidecar).
 
     Each claim gets its own targeted search; a judge model then grades every claim
     strictly against the evidence found. Much lighter than run_deliberation — use
@@ -301,8 +305,9 @@ def verify_claims(claims: list[str], model: str = "") -> dict:
 @mcp.tool()
 def search_web(query: str, max_results: int = 5) -> dict:
     """
-    Free web search (DuckDuckGo news + text, no API key) — the same search
-    Agora councils use. Returns formatted markdown results with links.
+    Free web search (news + web, no API key) via llm-sidecar — DuckDuckGo, or
+    a local SearXNG when available. The same search Agora councils use.
+    Returns formatted markdown results with links.
     """
     from engine.search import search_web as _search
 

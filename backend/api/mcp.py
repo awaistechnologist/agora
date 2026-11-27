@@ -104,7 +104,12 @@ def _atomic_write(path: str, data: dict) -> None:
 
 def _mcp_package_installed() -> bool:
     try:
-        import mcp.server.fastmcp  # noqa: F401
+        from mcp.server import MCPServer  # noqa: F401  (mcp >= 2)
+        return True
+    except ImportError:
+        pass
+    try:
+        import mcp.server.fastmcp  # noqa: F401  (mcp 1.x)
         return True
     except ImportError:
         return False

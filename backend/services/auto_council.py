@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from backend.database import CouncilRow
 from backend.services import settings_service, model_picker
 from engine.interface import AgoraEngine
+from llm_sidecar.client import UpstreamError
 
 logger = logging.getLogger("agora.auto_council")
 
@@ -216,8 +217,13 @@ def design_for_statement(db: Session, statement: str, budget: str = "free") -> d
                 architect_model, system_prompt, user_message, max_tokens=4500
             )
             break  # success — fall through to JSON parse
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code if e.response is not None else 0
+        except (httpx.HTTPStatusError, UpstreamError) as e:
+            # UpstreamError: OpenRouter's "HTTP 200 with an error body" case,
+            # which llm-sidecar raises instead of returning empty text.
+            if isinstance(e, UpstreamError):
+                status = e.status
+            else:
+                status = e.response.status_code if e.response is not None else 0
             if status in (429, 503):
                 logger.info(
                     f"architect: {architect_model} returned {status}; trying next candidate"
