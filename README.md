@@ -37,8 +37,10 @@ Track all deliberations, costs, and token usage at a glance.
 -   **OpenRouter Integration**: Access hundreds of LLMs via a single API.
 -   **Free Model Support**: Works seamlessly with free models like **DeepSeek V3 (Free)** via OpenRouter.
 -   **Local Privacy**: Custom council configurations and chat history are stored locally in SQLite (`data/agora.db`).
--   **Web Search**: Equip your council with real-time web search capabilities (requires OpenRouter models with online support).
+-   **Web Search**: Equip your council with real-time web search — free local search (DuckDuckGo, or SearXNG when available) or OpenRouter's online models.
+-   **Claim Verification**: Fact-check statements against live web evidence, with sources.
 -   **Cost Tracking**: Monitor token usage and costs per session.
+-   **Powered by [llm-sidecar](https://github.com/awaistechnologist/llm-sidecar)**: every model call, search and fact-check goes through llm-sidecar, installed automatically as a Python dependency (no daemon needed).
 
 ## Getting Started
 
@@ -60,7 +62,9 @@ Track all deliberations, costs, and token usage at a glance.
     ```bash
     ./install.sh
     ```
-    This sets up a Python virtual environment, installs dependencies, and builds the React frontend.
+    This sets up a Python virtual environment, installs dependencies (including [llm-sidecar](https://github.com/awaistechnologist/llm-sidecar)), and builds the React frontend.
+
+    > Upgrading from an earlier version? `git pull` then `./start.sh` — it installs any new dependencies automatically.
 
 3.  **Configure Environment**:
     Create a `.env` file in the root directory:
@@ -82,7 +86,7 @@ Visit **http://localhost:8080** in your browser.
 
 -   `backend/`: Python FastAPI server and business logic.
 -   `frontend/`: React + Vite application.
--   `engine/`: Core deliberation engine (pure Python, framework-agnostic).
+-   `engine/`: Core deliberation engine (pure Python, framework-agnostic). `engine/llm.py` is the single bridge to llm-sidecar.
 -   `mcp_server/`: Local MCP server — exposes councils as AI tools.
 -   `spec/`: HOCON specifications for councils.
 -   `data/`: Local SQLite database (gitignored).
@@ -98,6 +102,8 @@ Agora can run as a **local MCP server**, letting any MCP-compatible AI app call 
 | `list_councils` | List all active councils |
 | `get_council_details` | Get councillors and metadata for a specific council |
 | `run_deliberation` | Submit a statement and receive the full verdict |
+| `verify_claims` | Fact-check claims against fresh web evidence |
+| `search_web` | Free web search (news + web) |
 
 ### Setup
 
@@ -140,7 +146,7 @@ pwd  # note the repo path, e.g. /Users/you/agora
 
 **4. Restart your AI app.** The Agora tools will appear automatically.
 
-> **Note:** Your OpenRouter API key must be configured via the Agora web UI (`./start.sh` → Settings) before the MCP server can run deliberations. The MCP server shares the same local database.
+> **Note:** Configure your OpenRouter API key via the Agora web UI (`./start.sh` → Settings), or run councils fully locally with Ollama. If you already have llm-sidecar configured on this machine, Agora uses its key when Agora has none of its own. The MCP server shares the same local database.
 
 ### Example prompt (Claude Desktop)
 *"Use the agora tool to run my idea 'a local-first habit tracker with AI coaching' through the Idea Validator council."*

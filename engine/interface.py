@@ -1,26 +1,24 @@
 """
 Agora Engine — Core Interface
 
-The engine calls OpenRouter directly for each councillor and then for the coordinator synthesis,
-without requiring external agent servers.
-This produces real, high-quality AI deliberations with accurate cost tracking.
+The engine calls a model for each councillor and then for the coordinator
+synthesis. Every model call goes through llm-sidecar (see engine/llm.py), which
+routes `ollama/*` locally and everything else to OpenRouter, with retries,
+cost tracking and a shared usage ledger.
 """
 
 import os
 import json
 import asyncio
 import logging
-import time
 from datetime import datetime
-import httpx
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import AsyncGenerator, Optional
 
 logger = logging.getLogger("agora.engine")
 
-OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_PREFIX = "ollama/"
+# Re-exported: backend services import these from here.
+from engine.llm import OLLAMA_HOST, OLLAMA_PREFIX, get_sidecar  # noqa: E402,F401
 
 
 @dataclass
@@ -29,6 +27,18 @@ class UsageData:
     completion_tokens: int = 0
     total_tokens: int = 0
     cost: float = 0.0
+
+
+def _usage(u) -> "UsageData":
+    """llm_sidecar.Usage -> Agora's UsageData."""
+    if u is None:
+        return UsageData()
+    return UsageData(
+        prompt_tokens=u.prompt_tokens or 0,
+        completion_tokens=u.completion_tokens or 0,
+        total_tokens=u.total_tokens or 0,
+        cost=u.cost_usd or 0.0,
+    )
 
 
 @dataclass
@@ -63,72 +73,23 @@ class AgoraEngine:
     def __init__(self):
         self.api_key = os.getenv("OPENROUTER_API_KEY", "")
 
-    def _get_headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8080",
-            "X-Title": "Agora",
-        }
+    def _sidecar(self):
+        return get_sidecar(self.api_key or None)
 
     def _call_llm(self, model: str, system_prompt: str, user_message: str, max_tokens: int = 1000) -> tuple[str, UsageData]:
-        """Make a synchronous LLM call. Routes to Ollama for `ollama/*` model ids
-        and to OpenRouter for everything else. The wire format is identical
-        (OpenAI-compatible chat completions); only the base URL + auth differ."""
-        is_ollama = model.startswith(OLLAMA_PREFIX)
-        if is_ollama:
-            url = f"{OLLAMA_HOST}/v1/chat/completions"
-            wire_model = model[len(OLLAMA_PREFIX):]
-            headers = {"Content-Type": "application/json"}
-        else:
-            url = OPENROUTER_CHAT_URL
-            wire_model = model
-            headers = self._get_headers()
-
-        payload = {
-            "model": wire_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.7,
-            "max_tokens": max_tokens,
-        }
-
-        delays = [5, 20]
-        for attempt in range(len(delays) + 1):
-            try:
-                resp = httpx.post(url, json=payload, headers=headers, timeout=300.0)
-                resp.raise_for_status()
-                data = resp.json()
-
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                usage_raw = data.get("usage", {})
-                # Ollama doesn't bill, so cost is always 0 for local calls.
-                cost = 0.0 if is_ollama else (usage_raw.get("cost") or 0.0)
-                usage = UsageData(
-                    prompt_tokens=usage_raw.get("prompt_tokens", 0),
-                    completion_tokens=usage_raw.get("completion_tokens", 0),
-                    total_tokens=usage_raw.get("total_tokens", 0),
-                    cost=cost,
-                )
-                return content, usage
-
-            except httpx.HTTPStatusError as e:
-                status = e.response.status_code if e.response is not None else 0
-                if status in (429, 503) and attempt < len(delays):
-                    wait = delays[attempt]
-                    logger.warning(
-                        f"_call_llm: {wire_model} → HTTP {status}, "
-                        f"retrying in {wait}s (attempt {attempt + 1})"
-                    )
-                    time.sleep(wait)
-                else:
-                    logger.error(f"LLM call failed ({'ollama' if is_ollama else 'openrouter'}, model={wire_model}): {e}")
-                    raise
-            except Exception as e:
-                logger.error(f"LLM call failed ({'ollama' if is_ollama else 'openrouter'}, model={wire_model}): {e}")
-                raise
+        """One blocking completion through llm-sidecar. `ollama/*` ids run
+        locally, `claude/*` / `claude-api/*` use the Claude providers when
+        enabled in llm-sidecar, anything else goes to OpenRouter. The sidecar
+        retries 429/503 with backoff before raising."""
+        try:
+            done = self._sidecar().complete(
+                user_message, system=system_prompt, model=model,
+                max_tokens=max_tokens, temperature=0.7, operation="agora",
+            )
+        except Exception as e:
+            logger.error(f"LLM call failed (model={model}): {type(e).__name__}: {e}")
+            raise
+        return done.text, _usage(done.usage)
 
     def _infer_stance(self, perspective: str, response_text: str) -> str:
         """Simple stance inference based on councillor perspective."""
@@ -477,74 +438,26 @@ class AgoraEngine:
 
     async def _call_llm_stream(
         self,
-        client: httpx.AsyncClient,
         model: str,
         system_prompt: str,
         user_message: str,
         max_tokens: int = 1000,
     ) -> AsyncGenerator[dict, None]:
-        """Async generator. Yields {'type': 'token', 'text': str} for each
-        delta and finally {'type': 'usage', 'data': {...}} when the
-        provider sends a usage block (OpenRouter does; Ollama may not)."""
-        is_ollama = model.startswith(OLLAMA_PREFIX)
-        if is_ollama:
-            url = f"{OLLAMA_HOST}/v1/chat/completions"
-            wire_model = model[len(OLLAMA_PREFIX):]
-            headers = {"Content-Type": "application/json"}
-        else:
-            url = OPENROUTER_CHAT_URL
-            wire_model = model
-            headers = self._get_headers()
-
-        payload = {
-            "model": wire_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.7,
-            "max_tokens": max_tokens,
-            "stream": True,
-            # OpenRouter respects this and emits a final usage chunk.
-            # Ollama ignores it harmlessly.
-            "stream_options": {"include_usage": True},
-        }
-
+        """Async generator over llm-sidecar's stream. Yields
+        {'type': 'token', 'text': str} per delta and finally
+        {'type': 'usage', 'data': {...}} when the provider reports usage.
+        The sidecar retries 429/503 itself, but only before the first token."""
         try:
-            async with client.stream(
-                "POST", url, json=payload, headers=headers, timeout=300.0
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if not data or data == "[DONE]":
-                        continue
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    choices = chunk.get("choices") or []
-                    if choices:
-                        delta = choices[0].get("delta") or {}
-                        content = delta.get("content")
-                        if content:
-                            yield {"type": "token", "text": content}
-                    usage = chunk.get("usage")
-                    if usage:
-                        cost = 0.0 if is_ollama else (usage.get("cost") or 0.0)
-                        yield {"type": "usage", "data": {
-                            "prompt_tokens": usage.get("prompt_tokens", 0) or 0,
-                            "completion_tokens": usage.get("completion_tokens", 0) or 0,
-                            "total_tokens": usage.get("total_tokens", 0) or 0,
-                            "cost": cost,
-                        }}
+            async for event in self._sidecar().stream(
+                user_message, system=system_prompt, model=model,
+                max_tokens=max_tokens, temperature=0.7, operation="agora",
+            ):
+                if event["type"] == "token":
+                    yield event
+                elif event["type"] == "usage":
+                    yield {"type": "usage", "data": asdict(_usage(event["usage"]))}
         except Exception as e:
-            logger.error(
-                f"LLM stream failed ({'ollama' if is_ollama else 'openrouter'}, "
-                f"model={wire_model}): {type(e).__name__}: {e}"
-            )
+            logger.error(f"LLM stream failed (model={model}): {type(e).__name__}: {e}")
             raise
 
     async def run_deliberation_streaming(
@@ -643,7 +556,7 @@ class AgoraEngine:
                 base = base + "\n\n" + search_context
             return base
 
-        async def run_one(client: httpx.AsyncClient, c: dict):
+        async def run_one(c: dict):
             try:
                 model = c.get("model_override") or resolve_tier(c.get("model_tier"))
                 if web_search_enabled and use_online_model_suffix and not model.startswith(OLLAMA_PREFIX):
@@ -659,35 +572,17 @@ class AgoraEngine:
 
                 text_parts: list[str] = []
                 usage_data = None
-                retry_delays = [5, 20]
-
-                for attempt in range(len(retry_delays) + 1):
-                    try:
-                        async for chunk in self._call_llm_stream(
-                            client, model, build_system_prompt(c), statement
-                        ):
-                            if chunk["type"] == "token":
-                                text_parts.append(chunk["text"])
-                                await queue.put(SessionEvent("councillor_token", {
-                                    "councillor_id": c["id"],
-                                    "delta": chunk["text"],
-                                }))
-                            elif chunk["type"] == "usage":
-                                usage_data = chunk["data"]
-                        break  # success
-                    except httpx.HTTPStatusError as e:
-                        status = e.response.status_code if e.response is not None else 0
-                        # Only retry on rate-limit / service-unavailable, and only
-                        # if no tokens have been yielded yet (can't unsend a partial stream).
-                        if status in (429, 503) and attempt < len(retry_delays) and not text_parts:
-                            wait = retry_delays[attempt]
-                            logger.warning(
-                                f"Councillor '{c['name']}': {model} → HTTP {status}, "
-                                f"retrying in {wait}s (attempt {attempt + 1})"
-                            )
-                            await asyncio.sleep(wait)
-                        else:
-                            raise
+                async for chunk in self._call_llm_stream(
+                    model, build_system_prompt(c), statement
+                ):
+                    if chunk["type"] == "token":
+                        text_parts.append(chunk["text"])
+                        await queue.put(SessionEvent("councillor_token", {
+                            "councillor_id": c["id"],
+                            "delta": chunk["text"],
+                        }))
+                    elif chunk["type"] == "usage":
+                        usage_data = chunk["data"]
 
                 response_text = "".join(text_parts)
                 stance = self._infer_stance(c.get("perspective", "neutral"), response_text)
@@ -719,122 +614,105 @@ class AgoraEngine:
             finally:
                 await queue.put(DONE)
 
-        async with httpx.AsyncClient() as client:
-            tasks = [asyncio.create_task(run_one(client, c)) for c in councillors]
-            remaining = len(tasks)
-            while remaining > 0:
-                item = await queue.get()
-                if item is DONE:
-                    remaining -= 1
-                    continue
-                if item.type == "councillor_response":
-                    all_responses.append(item.data)
-                    if not item.data.get("error"):
-                        total_usage.prompt_tokens += item.data.get("prompt_tokens", 0) or 0
-                        total_usage.completion_tokens += item.data.get("completion_tokens", 0) or 0
-                        total_usage.total_tokens += item.data.get("total_tokens", 0) or 0
-                        total_usage.cost += item.data.get("cost_usd", 0.0) or 0.0
-                yield item
-            await asyncio.gather(*tasks, return_exceptions=True)
+        tasks = [asyncio.create_task(run_one(c)) for c in councillors]
+        remaining = len(tasks)
+        while remaining > 0:
+            item = await queue.get()
+            if item is DONE:
+                remaining -= 1
+                continue
+            if item.type == "councillor_response":
+                all_responses.append(item.data)
+                if not item.data.get("error"):
+                    total_usage.prompt_tokens += item.data.get("prompt_tokens", 0) or 0
+                    total_usage.completion_tokens += item.data.get("completion_tokens", 0) or 0
+                    total_usage.total_tokens += item.data.get("total_tokens", 0) or 0
+                    total_usage.cost += item.data.get("cost_usd", 0.0) or 0.0
+            yield item
+        await asyncio.gather(*tasks, return_exceptions=True)
 
-            # ── Phase 2: streaming coordinator ──
-            ci = coordinator_instructions or (
-                f"You are the coordinator of the {council_name}. "
-                "Synthesise the councillors' perspectives into a clear verdict.\n\n"
-                "Your verdict MUST include:\n"
-                "- A brief summary of what the user asked or stated.\n"
-                "- Where the councillors AGREE (common ground).\n"
-                "- Where the councillors DISAGREE (tensions or trade-offs).\n"
-                "- A balanced final recommendation.\n"
-                "- Suggested next steps.\n\n"
-                "At the end of your response, include a confidence assessment on a separate line:\n"
-                "CONFIDENCE: [Low/Medium/High]\n\n"
-                "Keep your language clear and accessible."
-            )
-            ci = f"Current Date: {current_date}\n\n" + ci
+        # ── Phase 2: streaming coordinator ──
+        ci = coordinator_instructions or (
+            f"You are the coordinator of the {council_name}. "
+            "Synthesise the councillors' perspectives into a clear verdict.\n\n"
+            "Your verdict MUST include:\n"
+            "- A brief summary of what the user asked or stated.\n"
+            "- Where the councillors AGREE (common ground).\n"
+            "- Where the councillors DISAGREE (tensions or trade-offs).\n"
+            "- A balanced final recommendation.\n"
+            "- Suggested next steps.\n\n"
+            "At the end of your response, include a confidence assessment on a separate line:\n"
+            "CONFIDENCE: [Low/Medium/High]\n\n"
+            "Keep your language clear and accessible."
+        )
+        ci = f"Current Date: {current_date}\n\n" + ci
 
-            synthesis_message = f'ORIGINAL STATEMENT:\n"{statement}"\n\nCOUNCILLOR RESPONSES:\n\n'
+        synthesis_message = f'ORIGINAL STATEMENT:\n"{statement}"\n\nCOUNCILLOR RESPONSES:\n\n'
+        for r in all_responses:
+            synthesis_message += f"--- {r['councillor_name']} ({r.get('councillor_role', '')}) ---\n"
+            synthesis_message += f"{r['response_text']}\n\n"
+        synthesis_message += "Please synthesise these perspectives into a clear, balanced verdict."
+
+        coordinator_model = resolve_tier(coordinator_model_tier)
+        if web_search_enabled and use_online_model_suffix and not coordinator_model.startswith(OLLAMA_PREFIX):
+            if not coordinator_model.endswith(":online") and not coordinator_model.endswith(":free"):
+                coordinator_model = coordinator_model + ":online"
+
+        final_ci = ci + ("\n\n" + search_context if search_context else "")
+
+        try:
+            yield SessionEvent("verdict_start", {"model_used": coordinator_model})
+
+            text_parts: list[str] = []
+            verdict_usage = None
+            async for chunk in self._call_llm_stream(
+                coordinator_model, final_ci, synthesis_message, max_tokens=2500
+            ):
+                if chunk["type"] == "token":
+                    text_parts.append(chunk["text"])
+                    yield SessionEvent("verdict_token", {"delta": chunk["text"]})
+                elif chunk["type"] == "usage":
+                    verdict_usage = chunk["data"]
+
+            verdict_text = "".join(text_parts)
+            if not verdict_text.strip():
+                raise ValueError("Coordinator returned an empty response.")
+
+            confidence = "medium"
+            for line in verdict_text.split("\n"):
+                if "CONFIDENCE:" in line.upper():
+                    if "HIGH" in line.upper():
+                        confidence = "high"
+                    elif "LOW" in line.upper():
+                        confidence = "low"
+                    break
+
+            if verdict_usage:
+                total_usage.prompt_tokens += verdict_usage["prompt_tokens"]
+                total_usage.completion_tokens += verdict_usage["completion_tokens"]
+                total_usage.total_tokens += verdict_usage["total_tokens"]
+                total_usage.cost += verdict_usage["cost"]
+
+            model_counts: dict[str, int] = {}
             for r in all_responses:
-                synthesis_message += f"--- {r['councillor_name']} ({r.get('councillor_role', '')}) ---\n"
-                synthesis_message += f"{r['response_text']}\n\n"
-            synthesis_message += "Please synthesise these perspectives into a clear, balanced verdict."
+                mu = r.get("model_used", "") or ""
+                short = mu.split("/")[-1] if "/" in mu else mu
+                if short:
+                    model_counts[short] = model_counts.get(short, 0) + 1
+            model_summary = ", ".join(f"{n} ({c})" for n, c in model_counts.items())
 
-            coordinator_model = resolve_tier(coordinator_model_tier)
-            if web_search_enabled and use_online_model_suffix and not coordinator_model.startswith(OLLAMA_PREFIX):
-                if not coordinator_model.endswith(":online") and not coordinator_model.endswith(":free"):
-                    coordinator_model = coordinator_model + ":online"
-
-            final_ci = ci + ("\n\n" + search_context if search_context else "")
-
-            try:
-                yield SessionEvent("verdict_start", {"model_used": coordinator_model})
-
-                text_parts: list[str] = []
-                verdict_usage = None
-                retry_delays = [5, 20]
-
-                for attempt in range(len(retry_delays) + 1):
-                    try:
-                        async for chunk in self._call_llm_stream(
-                            client, coordinator_model, final_ci, synthesis_message, max_tokens=2500
-                        ):
-                            if chunk["type"] == "token":
-                                text_parts.append(chunk["text"])
-                                yield SessionEvent("verdict_token", {"delta": chunk["text"]})
-                            elif chunk["type"] == "usage":
-                                verdict_usage = chunk["data"]
-                        break  # success
-                    except httpx.HTTPStatusError as e:
-                        status = e.response.status_code if e.response is not None else 0
-                        if status in (429, 503) and attempt < len(retry_delays) and not text_parts:
-                            wait = retry_delays[attempt]
-                            logger.warning(
-                                f"Coordinator: {coordinator_model} → HTTP {status}, "
-                                f"retrying in {wait}s (attempt {attempt + 1})"
-                            )
-                            await asyncio.sleep(wait)
-                        else:
-                            raise
-
-                verdict_text = "".join(text_parts)
-                if not verdict_text.strip():
-                    raise ValueError("Coordinator returned an empty response.")
-
-                confidence = "medium"
-                for line in verdict_text.split("\n"):
-                    if "CONFIDENCE:" in line.upper():
-                        if "HIGH" in line.upper():
-                            confidence = "high"
-                        elif "LOW" in line.upper():
-                            confidence = "low"
-                        break
-
-                if verdict_usage:
-                    total_usage.prompt_tokens += verdict_usage["prompt_tokens"]
-                    total_usage.completion_tokens += verdict_usage["completion_tokens"]
-                    total_usage.total_tokens += verdict_usage["total_tokens"]
-                    total_usage.cost += verdict_usage["cost"]
-
-                model_counts: dict[str, int] = {}
-                for r in all_responses:
-                    mu = r.get("model_used", "") or ""
-                    short = mu.split("/")[-1] if "/" in mu else mu
-                    if short:
-                        model_counts[short] = model_counts.get(short, 0) + 1
-                model_summary = ", ".join(f"{n} ({c})" for n, c in model_counts.items())
-
-                yield SessionEvent("verdict", {
-                    "verdict_text": verdict_text,
-                    "confidence": confidence,
-                    "total_cost_usd": round(total_usage.cost, 6),
-                    "total_tokens": total_usage.total_tokens,
-                    "model_summary": model_summary,
-                    "councillor_count": len([r for r in all_responses if not r.get("error")]),
-                    "verdict_cost_usd": round((verdict_usage or {}).get("cost", 0.0), 6) if verdict_usage else 0.0,
-                    "verdict_tokens": (verdict_usage or {}).get("total_tokens", 0) if verdict_usage else 0,
-                })
-            except Exception as e:
-                yield SessionEvent("error", {"message": f"Verdict generation failed: {str(e)[:200]}"})
+            yield SessionEvent("verdict", {
+                "verdict_text": verdict_text,
+                "confidence": confidence,
+                "total_cost_usd": round(total_usage.cost, 6),
+                "total_tokens": total_usage.total_tokens,
+                "model_summary": model_summary,
+                "councillor_count": len([r for r in all_responses if not r.get("error")]),
+                "verdict_cost_usd": round((verdict_usage or {}).get("cost", 0.0), 6) if verdict_usage else 0.0,
+                "verdict_tokens": (verdict_usage or {}).get("total_tokens", 0) if verdict_usage else 0,
+            })
+        except Exception as e:
+            yield SessionEvent("error", {"message": f"Verdict generation failed: {str(e)[:200]}"})
 
         yield SessionEvent("complete", {
             "total_cost_usd": round(total_usage.cost, 6),

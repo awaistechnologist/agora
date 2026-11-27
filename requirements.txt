@@ -1,3 +1,8 @@
+# Model calls, web search and claim verification all go through llm-sidecar
+# (used in-process as a library — no daemon needed). It also brings httpx,
+# ddgs, fastapi, uvicorn, pydantic and mcp; they are listed below anyway
+# because Agora imports them directly.
+llm-sidecar>=0.12.0,<0.13
 fastapi
 uvicorn[standard]
 sqlalchemy
@@ -7,5 +12,4 @@ httpx>=0.28.0
 cryptography
 pydantic
 sse-starlette
-ddgs>=9.10.0
 mcp>=1.0.0

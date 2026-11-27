@@ -47,7 +47,12 @@ echo "📦 Installing Python dependencies..."
 source venv/bin/activate
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
-echo "✅ Python dependencies installed."
+SIDECAR_VERSION="$(python -c 'import llm_sidecar; print(llm_sidecar.__version__)' 2>/dev/null || true)"
+if [ -z "$SIDECAR_VERSION" ]; then
+    echo "❌ llm-sidecar failed to install. Check your network and re-run ./install.sh."
+    exit 1
+fi
+echo "✅ Python dependencies installed (llm-sidecar $SIDECAR_VERSION)."
 
 # Frontend
 echo "📦 Installing frontend dependencies..."
